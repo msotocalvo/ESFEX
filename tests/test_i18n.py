@@ -280,12 +280,16 @@ class TestRealTranslationFiles:
             assert result != key, f"Key {key!r} not found in Spanish translations"
 
     def test_en_and_es_differ_for_known_keys(self):
-        """English and Spanish translations should differ for most keys."""
+        """English and Spanish translations should differ for localised keys.
+
+        ``app.title`` is the product brand ("ESFEX Studio") and is identical
+        across locales by design, so a genuinely localised key is used here.
+        """
         init_i18n("en")
-        en_title = tr("app.title")
+        en_value = tr("menu.file")
         init_i18n("es")
-        es_title = tr("app.title")
-        assert en_title != es_title
+        es_value = tr("menu.file")
+        assert en_value != es_value
 
     def test_interpolation_works_in_spanish(self):
         init_i18n("es")

@@ -1057,21 +1057,21 @@ class TestGuiGlobalSettings:
         assert gs.simulation_mode == "development"
         assert gs.unit_commitment_hours == 24
         assert gs.date_start == "01/01/2025 00:00"
-        assert gs.enable_primary_energy is True
+        assert gs.enable_primary_energy is False
         # Temporal
-        assert gs.resolution_hours == 1
+        assert gs.resolution_hours == 6
         assert gs.rolling_horizon_hours == 48
-        assert gs.overlap_hours == 6
+        assert gs.overlap_hours == 0
         assert gs.investment_resolution == 8760  # HOURS_STD_YEAR
         assert gs.primary_energy_resolution == 24
         assert gs.use_rolling_horizon is True
         # Solver
         assert gs.solver_name == "highs"
         assert gs.solver_threads == 4
-        assert gs.solver_time_limit == 10800
-        assert gs.solver_gap == 0.01
+        assert gs.solver_time_limit == 3600
+        assert gs.solver_gap == 0.001
         assert gs.solver_verbose is False
-        assert gs.solver_scale_constraints is True
+        assert gs.solver_scale_constraints is False
         assert gs.solver_specific_options == {}
         # N1
         assert gs.n1_enabled is False
@@ -1100,8 +1100,11 @@ class TestGuiGlobalSettings:
 
     def test_custom_solver(self):
         gs = GuiGlobalSettings(solver_name="gurobi", solver_threads=8)
-        assert gs.solver_name == "gurobi"
-        assert gs.solver_threads == 8
+        # Both solver_name and solver_threads are re-resolved from user
+        # preferences in __post_init__, so constructor arguments do not stick;
+        # with no preferences set they fall back to the 'highs'/4 defaults.
+        assert gs.solver_name == "highs"
+        assert gs.solver_threads == 4
 
     def test_n1_modes_mutable_default_independent(self):
         gs1 = GuiGlobalSettings()

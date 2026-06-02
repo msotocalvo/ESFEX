@@ -11,6 +11,7 @@ inside the command functions, so we must patch them at their origin modules:
 """
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +24,19 @@ from typer.testing import CliRunner
 from esfex.cli import app
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(result) -> str:
+    """CliRunner output with Rich ANSI styling stripped.
+
+    Typer renders ``--help`` through Rich, which colourises option names and
+    can split a literal like ``--config`` across ANSI escape sequences. Strip
+    them so substring assertions are robust to terminal styling.
+    """
+    return _ANSI_RE.sub("", result.output)
+
 
 # Path strings for patching (imports happen inside command functions)
 _PATCH_LOAD_CONFIG = "esfex.config.loader.load_config"
@@ -156,28 +170,28 @@ class TestHelp:
     def test_run_help(self):
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
-        assert "--config" in result.output
-        assert "--dry-run" in result.output
+        assert "--config" in _plain(result)
+        assert "--dry-run" in _plain(result)
 
     def test_validate_help(self):
         result = runner.invoke(app, ["validate", "--help"])
         assert result.exit_code == 0
-        assert "--config" in result.output
+        assert "--config" in _plain(result)
 
     def test_export_help(self):
         result = runner.invoke(app, ["export", "--help"])
         assert result.exit_code == 0
-        assert "--results" in result.output
-        assert "--format" in result.output
+        assert "--results" in _plain(result)
+        assert "--format" in _plain(result)
 
     def test_info_help(self):
         result = runner.invoke(app, ["info", "--help"])
         assert result.exit_code == 0
 
-    def test_editor_help(self):
-        result = runner.invoke(app, ["editor", "--help"])
+    def test_studio_help(self):
+        result = runner.invoke(app, ["studio", "--help"])
         assert result.exit_code == 0
-        assert "--config" in result.output
+        assert "--config" in _plain(result)
 
 
 # ---------------------------------------------------------------------------
@@ -457,9 +471,9 @@ class TestInfoCommand:
 
 class TestEditorCommand:
     def test_editor_help_works(self):
-        result = runner.invoke(app, ["editor", "--help"])
+        result = runner.invoke(app, ["studio", "--help"])
         assert result.exit_code == 0
-        assert "editor" in result.output.lower() or "GIS" in result.output
+        assert "studio" in _plain(result).lower() or "GIS" in _plain(result)
 
 
 # ---------------------------------------------------------------------------
@@ -524,7 +538,7 @@ class TestPluginCommands:
     def test_plugin_install_help(self):
         result = runner.invoke(app, ["plugin", "install", "--help"])
         assert result.exit_code == 0
-        assert "--git" in result.output or "--zip" in result.output
+        assert "--git" in _plain(result) or "--zip" in _plain(result)
 
     def test_plugin_uninstall_help(self):
         result = runner.invoke(app, ["plugin", "uninstall", "--help"])

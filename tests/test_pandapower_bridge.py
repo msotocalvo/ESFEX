@@ -536,9 +536,15 @@ class TestNativeACBridgeInterface:
         assert bridge._sgen_id_to_pp == {}
 
 
+@pytest.mark.julia
 @pytest.mark.skipif(not HAS_NATIVE, reason="Julia/NativeACBridge not available")
 class TestNativeACBridgePowerFlow:
-    """Test AC power flow execution via native Julia NR solver."""
+    """Test AC power flow execution via native Julia NR solver.
+
+    Requires a fully instantiated ESFEX Julia environment (not merely an
+    importable juliacall), so it carries the ``julia`` marker and is skipped
+    by ``-m "not julia"`` in lightweight/CI runs.
+    """
 
     def test_power_flow_converges(self):
         from esfex.analysis.native_ac_bridge import NativeACBridge
