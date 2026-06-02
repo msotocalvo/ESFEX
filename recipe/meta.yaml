@@ -1,0 +1,93 @@
+{% set name = "esfex" %}
+{% set version = "0.1.0" %}
+
+# ---------------------------------------------------------------------------
+# conda-forge recipe for ESFEX, in the conda-forge/staged-recipes layout.
+#
+# STATUS: ready, but BLOCKED. conda-forge requires every run dependency to be
+# available on conda-forge. These ESFEX dependencies are currently published
+# on PyPI only (not on conda-forge), so they are commented out below and the
+# recipe cannot be submitted/built until they land on conda-forge:
+#
+#     juliacall, windrex, solarex, rooftex, evrex
+#
+# Once those exist on conda-forge, uncomment them in `requirements: run:` and:
+#   1. Publish esfex to PyPI (the CI `publish` job does this on release).
+#   2. Fill `source.sha256` below with the sha256 of the PyPI sdist:
+#        curl -sL <sdist-url> | openssl sha256
+#   3. Open a PR adding `recipe/` to https://github.com/conda-forge/staged-recipes
+# ---------------------------------------------------------------------------
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.org/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  sha256: 0000000000000000000000000000000000000000000000000000000000000000  # TODO: fill after PyPI publish
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - esfex = esfex.cli:_entrypoint
+
+requirements:
+  host:
+    - python >=3.10
+    - pip
+    - setuptools >=61
+    - wheel
+  run:
+    - python >=3.10
+    - numpy >=1.24.0
+    - pandas >=2.0.0
+    - h5py >=3.8.0
+    - pydantic >=2.0.0
+    - pyyaml >=6.0
+    - typer >=0.9.0
+    - networkx >=3.0
+    - openpyxl >=3.1.0
+    - rich >=13.0.0
+    - psutil >=5.9.0
+    - scipy >=1.10.0
+    - pyside6 >=6.5.0
+    - superqt >=0.6.0
+    - markdown >=3.4
+    - ptyprocess >=0.7.0  # [unix]
+    # --- PyPI-only, NOT yet on conda-forge: uncomment when available ---
+    # - juliacall >=0.9.14
+    # - windrex >=0.1.0
+    # - solarex >=0.1.0
+    # - rooftex >=0.1.0
+    # - evrex >=0.1.0
+
+test:
+  imports:
+    - esfex
+  commands:
+    - esfex --help
+
+about:
+  home: https://github.com/msotocalvo/ESFEX
+  summary: "Energy System FlEXibility — hybrid Python/Julia power system capacity expansion and operational dispatch"
+  description: |
+    ESFEX (Energy System FlEXibility) is an open-source hybrid Python/Julia
+    framework for power system capacity expansion and operational dispatch
+    under high renewable penetration. It couples a strategic capacity
+    expansion planner with a detailed operational dispatch engine through a
+    two-stage decomposition, so investment decisions are operationally
+    validated before being accepted. It supports DC/AC optimal power flow,
+    N-1 security, frequency stability, battery storage, sector coupling
+    (electrolyzer, primary energy, EV/V2G, rooftop solar), MGA/SPORES,
+    stochastic programming, Sobol sensitivity, and a GIS-based Studio.
+  license: Apache-2.0
+  license_family: APACHE
+  license_file: LICENSE
+  doc_url: https://github.com/msotocalvo/ESFEX#readme
+  dev_url: https://github.com/msotocalvo/ESFEX
+
+extra:
+  recipe-maintainers:
+    - msotocalvo

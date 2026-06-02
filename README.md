@@ -9,6 +9,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/msotocalvo/ESFEX/actions/workflows/ci.yml">
+    <img src="https://github.com/msotocalvo/ESFEX/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
   <a href="https://www.python.org/downloads/">
     <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg" alt="Python">
   </a>
