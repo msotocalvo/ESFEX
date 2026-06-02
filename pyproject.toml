@@ -163,8 +163,13 @@ omit = [
     "*/esfex/visualization/workflows/*_charts.py",
     "*/esfex/visualization/workflows/*_wizard.py",
     "*/esfex/visualization/workflows/risk_panels.py",
+    "*/esfex/visualization/workflows/otec_studio/*_panel.py",
+    "*/esfex/visualization/workflows/otec_studio/window.py",
+    "*/esfex/visualization/workflows/otec_studio/workers.py",
+    "*/esfex/visualization/modern_widgets.py",
     "*/esfex/visualization/**/gui_dialog.py",
     "*/esfex/visualization/**/*_dialog.py",
+    "*/esfex/plugins/**/gui_dialog.py",
     # 2. Julia-bound integration glue (exercised by `julia`-marked tests)
     "*/esfex/runner.py",
     "*/esfex/bridge/adapters.py",
@@ -172,10 +177,14 @@ omit = [
     # 3. Optional resource-assessment / demand pipelines (heavy extras + data)
     "*/esfex/visualization/workflows/*_analysis.py",
     "*/esfex/visualization/workflows/*_fetchers.py",
+    "*/esfex/analysis/pandapower_bridge.py",
     "*/esfex/models/demand_real_data.py",
     "*/esfex/models/demand_training.py",
     "*/esfex/models/demand_zonal_fetchers.py",
     "*/esfex/models/ecvi_gridded.py",
+    "*/esfex/models/demand_dataset.py",
+    "*/esfex/models/tft_inference.py",
+    "*/esfex/models/demand_tft.py",
 ]
 
 [tool.coverage.report]
