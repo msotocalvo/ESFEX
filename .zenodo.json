@@ -1,0 +1,38 @@
+{
+  "title": "ESFEX: Energy System FlEXibility — Power System Optimization",
+  "description": "ESFEX (Energy System FlEXibility) is an open-source hybrid Python/Julia framework for power system capacity expansion and operational dispatch under high renewable penetration. It couples a strategic capacity expansion planner (Master Problem) with a detailed operational dispatch engine through a two-stage decomposition, so investment decisions are operationally validated (ramp rates, minimum stable generation, storage cycling, demand response, sector coupling) before being accepted. Features include DC and AC optimal power flow, N-1 security, frequency stability, battery storage, sector coupling (electrolyzer/P2H2, primary energy supply chain, EV/V2G, rooftop solar), MGA and SPORES near-optimal exploration, scenario-based stochastic programming, Sobol sensitivity analysis, and a GIS-based Studio. Optimization is implemented in Julia via JuMP and orchestrated from Python through juliacall.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "Apache-2.0",
+  "creators": [
+    {
+      "name": "Soto Calvo, Manuel",
+      "affiliation": "Hiroshima University"
+    },
+    {
+      "name": "Lee, Han Soo",
+      "affiliation": "Hiroshima University"
+    }
+  ],
+  "keywords": [
+    "power systems",
+    "energy system optimization",
+    "capacity expansion planning",
+    "unit commitment",
+    "operational dispatch",
+    "renewable energy",
+    "flexibility",
+    "sector coupling",
+    "optimal power flow",
+    "JuMP",
+    "Julia",
+    "Python"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/msotocalvo/ESFEX",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}
