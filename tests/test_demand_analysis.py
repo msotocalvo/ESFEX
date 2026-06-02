@@ -11,10 +11,12 @@ Covers the following public functions and classes:
 
 import math
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
+
+gpd = pytest.importorskip("geopandas")
+pytest.importorskip("shapely")
 from shapely.geometry import Point, Polygon
 
 from esfex.visualization.workflows.demand_analysis import (
