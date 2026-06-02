@@ -1,0 +1,47 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.so
+
+# ── Build artifacts ──
+build/
+dist/
+wheels/
+
+# ── Large data / model binaries ──
+data/
+# Exception: src/esfex/visualization/data/ is the GUI data-layer Python
+# package (gui_model, validation, geojson_importer, serializer, ...),
+# not a data dump. The `data/` rule above otherwise catches it.
+!src/esfex/visualization/data/
+!src/esfex/visualization/data/**
+*.h5
+*.hdf5
+*.nc
+*.ckpt
+*.xgb
+*.pt
+*.pth
+*.npz
+
+# ── Optimization / solver outputs ──
+results/
+lightning_logs/
+availability/
+logs/
+*.log
+*.lp
+gurobi.log
+
+# ── OS / editor ──
+.DS_Store
+.vscode/
+.idea/
+*.swp

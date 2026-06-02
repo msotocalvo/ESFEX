@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESFEX Studio</title>
+
+<!-- Leaflet CSS (vendorized) -->
+<link rel="stylesheet" href="leaflet.css" />
+<!-- Leaflet Draw CSS (vendorized) -->
+<link rel="stylesheet" href="leaflet.draw.css" />
+<!-- Leaflet MarkerCluster (bus aggregation at low zoom) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+<style>
+    /* Structural CSS only — marker and theme styles are injected from Python */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    #map { width: 100%; height: 100%; }
+
+    /* Map marker context menu */
+    #map-ctx-menu {
+        display: none;
+        position: fixed;
+        z-index: 9999;
+        background: #ffffff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        box-shadow: 2px 4px 12px rgba(0,0,0,0.25);
+        min-width: 150px;
+        font-family: Arial, sans-serif;
+        font-size: 13px;
+        user-select: none;
+    }
+    #map-ctx-menu ul {
+        list-style: none;
+        margin: 0;
+        padding: 4px 0;
+    }
+    #map-ctx-menu li {
+        padding: 7px 16px;
+        cursor: pointer;
+        color: #222;
+        white-space: nowrap;
+    }
+    #map-ctx-menu li:hover {
+        background: #e8f0fe;
+        color: #1a73e8;
+    }
+    #map-ctx-menu li.ctx-separator {
+        height: 1px;
+        padding: 0;
+        margin: 4px 0;
+        background: #e0e0e0;
+        cursor: default;
+    }
+    #map-ctx-menu li.ctx-separator:hover {
+        background: #e0e0e0;
+        color: inherit;
+    }
+    #map-ctx-menu li.ctx-delete {
+        color: #c0392b;
+    }
+    #map-ctx-menu li.ctx-delete:hover {
+        background: #fdecea;
+        color: #c0392b;
+    }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- Marker right-click context menu -->
+<div id="map-ctx-menu">
+    <ul>
+        <li data-action="duplicate">Duplicate</li>
+        <li data-action="copy">Copy attributes</li>
+        <li data-action="paste">Paste attributes</li>
+        <li class="ctx-separator"></li>
+        <li data-action="delete" class="ctx-delete">Delete</li>
+    </ul>
+</div>
+
+<!-- Leaflet JS (vendorized) -->
+<script src="leaflet.js"></script>
+<!-- Leaflet Draw JS (vendorized) -->
+<script src="leaflet.draw.js"></script>
+<!-- Leaflet MarkerCluster -->
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<!-- Qt WebChannel -->
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<!-- Map Controller -->
+<script src="map_controller.js"></script>
+</body>
+</html>

@@ -1,0 +1,1257 @@
+simulation_mode: development
+unit_commitment_hours: 24
+date_start: 01/01/2025 00:00
+temporal:
+  resolution_hours: 6
+  rolling_horizon_hours: 48
+  overlap_hours: 6
+  investment_resolution: 8760
+  primary_energy_resolution: 24
+  use_rolling_horizon: true
+solver:
+  name: highs
+  threads: 20
+  time_limit: 10800
+  gap: 0.01
+  verbose: false
+  scale_constraints: true
+  options:
+    presolve: 'on'
+    solver: simplex
+network_reduction:
+  enabled: false
+  kron_deg3: false
+n1_security:
+  enabled: true
+  apply_to_modes:
+  - unit_commitment
+  transmission_enabled: false
+  transmission_reserve_factor: 0.0
+  critical_line_threshold: 0.0
+  generation_enabled: true
+  generation_reserve_type: largest_unit
+  generation_reserve_percentage: 0.15
+  scopf_enabled: false
+  scopf_max_iterations: 5
+  scopf_violation_tolerance: 0.01
+  corrective_enabled: false
+  contingency_depth: n1
+  redistribution_mode: pro_rata
+  pi_screening_threshold: 0.0
+  transformer_contingencies: false
+  battery_contingencies: false
+master_problem:
+  stochastic: false
+  representative_days: 5
+  min_day_separation: 5
+  use_tsam: false
+  tsam_num_periods: 10
+  tsam_method: kmedoids
+  tsam_inter_period_linking: true
+  use_uc_in_dispatch: false
+  planning_mode: perfect_foresight
+  mga:
+    enabled: false
+    num_alternatives: 10
+    slack_fraction: 0.05
+    investment_threshold: 0.1
+enable_primary_energy: false
+meta_network:
+  systems:
+  - Canon
+  systems_links: []
+  dynamic_transfer_pricing: true
+  inter_system_loss_segments: 2
+systems:
+  Canon:
+    fuels:
+      Fuel_oil:
+        name: Fuel_oil
+        unit: ton
+        emission_factor: 0.279
+        energy_content: 11.6
+        price_base: 107.95
+        price_growth_rate: 0.01
+      Oil:
+        name: Oil
+        unit: ton
+        emission_factor: 0.38
+        energy_content: 13.06
+        price_base: 70.2
+        price_growth_rate: 0.02
+      Diesel:
+        name: Diesel
+        unit: ton
+        emission_factor: 0.267
+        energy_content: 11.2
+        price_base: 150.0
+        price_growth_rate: 0.02
+      Gas:
+        name: Gas
+        unit: ton
+        emission_factor: 0.2
+        energy_content: 12.28
+        price_base: 110.0
+        price_growth_rate: 0.015
+      Biomass:
+        name: Biomass
+        unit: ton
+        emission_factor: 0.0
+        energy_content: 4.5
+        price_base: 112.0
+        price_growth_rate: -0.005
+      Hydrogen:
+        name: Hydrogen
+        unit: ton
+        emission_factor: 0.0
+        energy_content: 0.033
+        price_base: 6.0
+        price_growth_rate: -0.08
+      None:
+        name: None
+        emission_factor: 0.0
+        price_base: 0.0
+        price_growth_rate: 0.0
+    penalties:
+      LOSS_OF_LOAD: 50000.0
+      LOSS_OF_RESERVE_STATIC: 100.0
+      LOSS_OF_RESERVE_DYNAMIC: 100.0
+      LOSS_OF_INERTIA: 200.0
+      TransferMargin: 100.0
+      Curtailment: 100.0
+      max_curtailment_ratio: 0.05
+      rooftop_curtailment: 5.0
+      CO2_cost: 10.0
+      CO2_budget_violation: 50.0
+      FRE_penetration_loss: 100.0
+      EV_loss: 10.0
+      loss_of_fuel_supply: 500.0
+      coupling_slack_penalty: 1.0
+      transport_congestion: 100.0
+      storage_violation: 100.0
+      non_electric_demand_loss: 100.0
+      curtailment_cost: 20.0
+      curtailment_excess_penalty: 500.0
+      re_excess_penalty: 100.0
+    technologies:
+      tech_solar:
+        name: Solar PV
+        type: Renewable
+        fuel: Sun
+        invest_cost:
+        - 900000.0
+        invest_max_power:
+        - 500.0
+        Availability: data/profile_sun_1.xlsx
+        eff_at_rated:
+        - 0.98
+        degradation_rate:
+        - 0.04
+        lifetime: 25
+        min_output:
+        - 0.0
+        ramp_up:
+        - 1.0
+        ramp_down:
+        - 1.0
+        fuel_cost:
+        - 0.0
+        fuel_cost_curve: null
+        fixed_cost:
+        - 5.02
+        maintenance_cost:
+        - 5.38
+        inertia:
+        - 0.0
+        droop:
+        - 0.05
+        governor_time_const:
+        - 5.0
+        start_up_cost:
+        - 0.0
+        eff_at_min:
+        - 0.0
+        min_up:
+        - 0
+        min_down:
+        - 0
+        frequency_hz: 60.0
+        current_type: AC
+        reservable: false
+        decommissioning_cost:
+        - 0.0
+        risk_coefficient:
+        - 1.0
+        color: null
+      tech_wind:
+        name: Wind
+        type: Renewable
+        fuel: Wind
+        invest_cost:
+        - 1200000.0
+        invest_max_power:
+        - 20.0
+        Availability: data/profile_wind_1.xlsx
+        eff_at_rated:
+        - 0.98
+        degradation_rate:
+        - 0.04
+        lifetime: 25
+        min_output:
+        - 0.0
+        ramp_up:
+        - 1.0
+        ramp_down:
+        - 1.0
+        fuel_cost:
+        - 0.0
+        fuel_cost_curve: null
+        fixed_cost:
+        - 54.63
+        maintenance_cost:
+        - 10.26
+        inertia:
+        - 0.5
+        droop:
+        - 0.05
+        governor_time_const:
+        - 5.0
+        start_up_cost:
+        - 0.0
+        eff_at_min:
+        - 0.0
+        min_up:
+        - 0
+        min_down:
+        - 0
+        frequency_hz: 60.0
+        current_type: AC
+        reservable: false
+        decommissioning_cost:
+        - 0.0
+        risk_coefficient:
+        - 1.0
+        color: null
+      tech_biomass:
+        name: Biomass
+        type: Renewable
+        fuel: Biomass
+        invest_cost:
+        - 2200000.0
+        invest_max_power:
+        - 10.0
+        Availability: data/profile_thermal_1.xlsx
+        eff_at_rated:
+        - 0.34
+        degradation_rate:
+        - 0.04
+        lifetime: 25
+        min_output:
+        - 0.3
+        ramp_up:
+        - 0.2
+        ramp_down:
+        - 0.2
+        fuel_cost:
+        - 11.2
+        fuel_cost_curve: null
+        fixed_cost:
+        - 1.8
+        maintenance_cost:
+        - 53.86
+        inertia:
+        - 3.16
+        droop:
+        - 0.05
+        governor_time_const:
+        - 5.0
+        start_up_cost:
+        - 0.0
+        eff_at_min:
+        - 0.3
+        min_up:
+        - 3
+        min_down:
+        - 3
+        frequency_hz: 60.0
+        current_type: AC
+        reservable: true
+        decommissioning_cost:
+        - 0.0
+        risk_coefficient:
+        - 1.0
+        color: null
+      tech_gas:
+        name: Gas
+        type: Non-renewable
+        fuel: Gas
+        invest_cost:
+        - 2200000.0
+        - 2200000.0
+        - 2200000.0
+        invest_max_power:
+        - 0.0
+        - 0.0
+        - 0.0
+        Availability: null
+        eff_at_rated:
+        - 0.34
+        - 0.34
+        - 0.34
+        degradation_rate:
+        - 0.04
+        - 0.04
+        - 0.04
+        lifetime: 25
+        min_output:
+        - 0.0
+        - 0.0
+        - 0.0
+        ramp_up:
+        - 0.2
+        - 0.2
+        - 0.2
+        ramp_down:
+        - 0.2
+        - 0.2
+        - 0.2
+        fuel_cost:
+        - 20.0
+        - 20.0
+        - 20.0
+        fuel_cost_curve: null
+        fixed_cost:
+        - 1.8
+        - 1.8
+        - 1.8
+        maintenance_cost:
+        - 53.86
+        - 53.86
+        - 53.86
+        inertia:
+        - 3.16
+        - 3.16
+        - 3.16
+        droop:
+        - 0.05
+        - 0.05
+        - 0.05
+        governor_time_const:
+        - 5.0
+        - 5.0
+        - 5.0
+        start_up_cost:
+        - 0.0
+        - 0.0
+        - 0.0
+        eff_at_min:
+        - 0.3
+        - 0.3
+        - 0.3
+        min_up:
+        - 0
+        - 0
+        - 0
+        min_down:
+        - 0
+        - 0
+        - 0
+        frequency_hz: 60.0
+        current_type: AC
+        reservable: true
+        decommissioning_cost:
+        - 0.0
+        - 0.0
+        - 0.0
+        risk_coefficient:
+        - 1.0
+        - 1.0
+        - 1.0
+        color: null
+    battery_technologies:
+      tech_li_ion:
+        name: Li-ion Battery
+        invest_cost_power:
+        - 600000.0
+        invest_cost_energy:
+        - 240000.0
+        invest_max_power:
+        - 500.0
+        invest_max_capacity:
+        - 2500.0
+        min_duration_hours: 4.0
+        max_duration_hours: 12.0
+        efficiency_charge:
+        - 0.9
+        efficiency_discharge:
+        - 0.9
+        degradation_rate:
+        - 0.04
+        lifetime: 25
+        soc_initial:
+        - 0.5
+        max_DoD:
+        - 1.0
+        maintenance_cost:
+        - 47.46
+        inertia:
+        - 10.0
+        throughput_degradation_cost:
+        - 0.0
+        spillage: true
+        current_type: AC
+        decommissioning_cost:
+        - 0.0
+        risk_coefficient:
+        - 1.0
+        color: null
+    _technologies:
+      tech_diesel_engines:
+        name: Diesel engines
+        category: Non-renewable
+        fuel: Diesel
+        life_time: 25
+        degradation_rate: 0.04
+        eff_at_rated: 0.39
+        eff_at_min: 0.3
+        invest_cost: 600000
+        invest_max_power: 0
+        invest_cost_energy: 0
+        invest_max_capacity: 0
+      tech_biomass:
+        name: Biomass
+        category: Renewable
+        fuel: Biomass
+        life_time: 25
+        degradation_rate: 0.04
+        eff_at_rated: 0.34
+        eff_at_min: 0.3
+        invest_cost: 2200000
+        invest_max_power: 10
+        invest_cost_energy: 0
+        invest_max_capacity: 0
+      tech_wind:
+        name: Wind
+        category: Renewable
+        fuel: Wind
+        life_time: 25
+        degradation_rate: 0.04
+        eff_at_rated: 0.98
+        eff_at_min: 0.98
+        invest_cost: 1200000
+        invest_max_power: 20
+        invest_cost_energy: 0
+        invest_max_capacity: 0
+      tech_solar:
+        name: Solar PV
+        category: Renewable
+        fuel: Sun
+        life_time: 25
+        degradation_rate: 0.04
+        eff_at_rated: 0.98
+        eff_at_min: 0.98
+        invest_cost: 900000
+        invest_max_power: 500
+        invest_cost_energy: 0
+        invest_max_capacity: 0
+      tech_otec:
+        name: OTEC
+        category: Renewable
+        fuel: OTEC
+        life_time: 25
+        degradation_rate: 0.04
+        eff_at_rated: 0.98
+        eff_at_min: 0.98
+        invest_cost: 1100000
+        invest_max_power: 50
+        invest_cost_energy: 0
+        invest_max_capacity: 0
+      tech_li_ion:
+        name: Li-ion Battery
+        category: Storage
+        fuel: None
+        life_time: 25
+        degradation_rate: 0.04
+        eff_at_rated: 0.8
+        eff_at_min: 0.8
+        invest_cost: 600000
+        invest_max_power: 500
+        invest_cost_energy: 240000
+        invest_max_capacity: 2500
+      tech_hydrogen_fc:
+        name: Hydrogen Fuel Cell
+        category: Storage
+        fuel: Hydrogen
+        life_time: 25
+        degradation_rate: 0.04
+        eff_at_rated: 0.98
+        eff_at_min: 0.98
+        invest_cost: 2000000
+        invest_max_power: 5
+        invest_cost_energy: 150000
+        invest_max_capacity: 50
+      tech_pem_electrolyzer:
+        name: PEM Electrolyzer
+        category: Electrolyzer
+        fuel: Hydrogen
+        life_time: 20
+        degradation_rate: 0.01
+        eff_at_rated: 0.65
+        eff_at_min: 0.55
+        invest_cost: 800000
+        invest_max_power: 80
+        invest_cost_energy: 0
+        invest_max_capacity: 0
+    conversion_technologies:
+      biomass_boiler:
+        fuel: Biomass
+        efficiency: 0.85
+        units:
+          unit_4: 1.0
+      diesel_transport:
+        fuel: Diesel
+        efficiency: 0.35
+        units:
+          unit_6: 1.0
+    dc_power_flow:
+      enable_angle_limits: true
+      max_angle_diff_deg: 30.0
+      slack_bus: 0
+    ac_power_flow:
+      base_mva: 100.0
+      voltage_min_pu: 0.9
+      voltage_max_pu: 1.1
+      default_power_factor: 0.85
+      load_power_factor: 0.9
+      q_slack_penalty: 100.0
+      min_reactance_pu: 0.01
+      tap_ratio_min: 0.5
+      tap_ratio_max: 2.0
+      q_min_ratio: 0.5
+    criticality_penalties:
+      critical: 3.0
+      high: 2.0
+      medium: 1.0
+      low: 0.5
+    base_lcoe: 93.0
+    discount_rate: 0.05
+    life_extension_cost_factor: 0.2
+    max_decommission_cost_per_mw: 500000.0
+    max_npv_penalty_per_mw: 1000000.0
+    npv_annual_return_rate: 0.15
+    frequency_nominal: 50.0
+    frequency_nadir_limit: 49.0
+    rocof_limit: 2.0
+    load_damping: 0.01
+    power_flow_mode: dcopf
+    soc_end_tolerance: 0.05
+    min_cycling_period_days: 7.0
+    min_cycling_ratio: 0.8
+    demand_shift_cost_rate: 0.1
+    flexible_demand_benefit_ratio: 0.5
+    name: Canon
+    demand_path: tests/fixtures/canon3_demand.csv
+    demand_paths: null
+    demand_scale: 1.0
+    sim_rooftop: false
+    SIM_ROOFTOP: false
+    target_re_penetration: 0.0
+    TARGET_RE_PENETRATION: 0.0
+    min_annual_increment: 0.0
+    max_annual_increment: 0.0
+    MIN_ANNUAL_INCREMENT: 0.0
+    MAX_ANNUAL_INCREMENT: 0.0
+    reserve_static_default_ratio: 0.0
+    dynamic_reserve_contribution: 0.0
+    reserve_margin: 1.0
+    max_annual_system_cost: 1000000000000000.0
+    MAX_ANNUAL_SYSTEM_COST: 1000000000000000.0
+    inertia_limit_threshold: 0.0
+    INERTIA_LIMIT_THRESHOLD: 0.0
+    force_replacement: false
+    FORCE_REPLACEMENT: false
+    batteries:
+      tinybat:
+        name: TinyBat
+        type: Storage
+        fuel: None
+        reservable: true
+        spillage: true
+        min_duration_hours: 4
+        max_duration_hours: 12
+        current_type: AC
+        life_time:
+        - 25
+        - 25
+        - 25
+        initial_age:
+        - 0
+        - 0
+        - 0
+        degradation_rate:
+        - 0.04
+        - 0.04
+        - 0.04
+        decommissioning_cost:
+        - 100.0
+        - 100.0
+        - 100.0
+        rated_power:
+        - 1.0
+        - 0.0
+        - 0.0
+        min_power:
+        - 0.0
+        - 0.0
+        - 0.0
+        min_up:
+        - 0
+        - 0
+        - 0
+        min_down:
+        - 0
+        - 0
+        - 0
+        ramp_up:
+        - 1.0
+        - 1.0
+        - 1.0
+        ramp_down:
+        - 1.0
+        - 1.0
+        - 1.0
+        eff_at_rated:
+        - 0.8
+        - 0.8
+        - 0.8
+        eff_at_min:
+        - 0.8
+        - 0.8
+        - 0.8
+        inertia:
+        - 10.0
+        - 10.0
+        - 10.0
+        risk_coefficient:
+        - 1.0
+        - 1.0
+        - 1.0
+        start_up_cost:
+        - 0.0
+        - 0.0
+        - 0.0
+        fuel_cost:
+        - 0.0
+        - 0.0
+        - 0.0
+        fixed_cost:
+        - 1.23
+        - 1.23
+        - 1.23
+        maintenance_cost:
+        - 47.46
+        - 47.46
+        - 47.46
+        efficiency_charge:
+        - 0.9
+        - 0.9
+        - 0.9
+        efficiency_discharge:
+        - 0.9
+        - 0.9
+        - 0.9
+        soc_initial:
+        - 0.5
+        - 0.5
+        - 0.5
+        max_DoD:
+        - 1.0
+        - 1.0
+        - 1.0
+        capacity:
+        - 1.0
+        - 0.0
+        - 0.0
+        MaxChargePower:
+        - 1.0
+        - 0.0
+        - 0.0
+        MaxDischargePower:
+        - 1.0
+        - 0.0
+        - 0.0
+        throughput_degradation_cost:
+        - 0.0
+        - 0.0
+        - 0.0
+        invest_cost:
+        - 600000.0
+        - 600000.0
+        - 600000.0
+        invest_max_power:
+        - 0.0
+        - 0.0
+        - 0.0
+        invest_cost_energy:
+        - 240000.0
+        - 240000.0
+        - 240000.0
+        invest_max_capacity:
+        - 0.0
+        - 0.0
+        - 0.0
+    ev_quantity: {}
+    ev_categories: {}
+    ev_initial_soc: []
+    EV_initial_soc: []
+    rooftop_max_potential: []
+    co2_budget:
+      enabled: false
+      annual_budget: 1000000000000000.0
+    stochastic_scenarios:
+    - name: Base
+      probability: 0.5
+      description: Base scenario with expected costs
+      multipliers:
+        invest_cost_renewables: 1.0
+        invest_cost_storage: 1.0
+        invest_cost_conventional: 1.0
+        invest_cost_transmission: 1.0
+        fuel_cost: 1.0
+        maintenance_cost: 1.0
+        discount_rate: 1.0
+        demand_growth: 1.0
+        fuel_price_growth: 1.0
+        carbon_price: 1.0
+    - name: High_RE_Cost
+      probability: 0.25
+      description: Higher renewable and storage investment costs
+      multipliers:
+        invest_cost_renewables: 1.3
+        invest_cost_storage: 1.2
+        invest_cost_conventional: 1.0
+        invest_cost_transmission: 1.1
+        fuel_cost: 0.9
+        maintenance_cost: 1.0
+        discount_rate: 1.0
+        demand_growth: 1.0
+        fuel_price_growth: 0.8
+        carbon_price: 0.8
+    - name: High_Fuel_Cost
+      probability: 0.25
+      description: Higher fossil fuel prices accelerating transition
+      multipliers:
+        invest_cost_renewables: 0.9
+        invest_cost_storage: 0.9
+        invest_cost_conventional: 1.1
+        invest_cost_transmission: 1.0
+        fuel_cost: 1.5
+        maintenance_cost: 1.1
+        discount_rate: 1.0
+        demand_growth: 0.95
+        fuel_price_growth: 1.5
+        carbon_price: 1.5
+    base_patterns: {}
+    electric_demand: {}
+    sector_distribution: {}
+    nodes:
+      num_nodes: 3
+      nodes_connections:
+      - 0
+      - 2000
+      - 0
+      - 2000
+      - 0
+      - 2000
+      - 0
+      - 2000
+      - 0
+      reserve_static:
+      - 0.0
+      - 0.0
+      - 0.0
+      reserve_dynamic:
+      - 0.0
+      - 0.0
+      - 0.0
+      reserve_duration:
+      - 2
+      - 2
+      - 2
+      losses:
+      - 0.0
+      - 0.0
+      - 0.0
+      transference_invest_cost:
+      - 0.0
+      - 0.0
+      - 0.0
+      transference_invest_max:
+      - 0.0
+      - 0.0
+      - 0.0
+      node_names:
+      - Node 0
+      - Node 1
+      - Node 2
+      node_coordinates:
+      - latitude: 10.0
+        longitude: -70.0
+        label: Node 0
+      - latitude: 11.0
+        longitude: -70.0
+        label: Node 1
+      - latitude: 12.0
+        longitude: -70.0
+        label: Node 2
+    buses:
+    - bus_id: bus_0
+      name: N0-HUB
+      parent_node: 0
+      voltage_kv: 220.0
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_1
+      name: N0-GEN
+      parent_node: 0
+      voltage_kv: 34.5
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_2
+      name: N0-LOAD
+      parent_node: 0
+      voltage_kv: 34.5
+      frequency_hz: 60.0
+      role: load
+      demand_fraction: 1.0
+    - bus_id: bus_3
+      name: N0-AUX
+      parent_node: 0
+      voltage_kv: 220.0
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_4
+      name: N1-HUB
+      parent_node: 1
+      voltage_kv: 220.0
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_5
+      name: N1-GEN
+      parent_node: 1
+      voltage_kv: 34.5
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_6
+      name: N1-LOAD
+      parent_node: 1
+      voltage_kv: 34.5
+      frequency_hz: 60.0
+      role: load
+      demand_fraction: 1.0
+    - bus_id: bus_7
+      name: N1-AUX
+      parent_node: 1
+      voltage_kv: 220.0
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_8
+      name: N2-HUB
+      parent_node: 2
+      voltage_kv: 220.0
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_9
+      name: N2-GEN
+      parent_node: 2
+      voltage_kv: 34.5
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    - bus_id: bus_10
+      name: N2-LOAD
+      parent_node: 2
+      voltage_kv: 34.5
+      frequency_hz: 60.0
+      role: load
+      demand_fraction: 1.0
+    - bus_id: bus_11
+      name: N2-AUX
+      parent_node: 2
+      voltage_kv: 220.0
+      frequency_hz: 60.0
+      role: connection
+      demand_fraction: 0.0
+    transmission_lines_geo:
+    - line_id: intra_0
+      from_node: 0
+      to_node: 0
+      from_bus: 0
+      to_bus: 3
+      capacity_mw: 2000
+      voltage_kv: 220.0
+      reactance_pu: 0.01
+      resistance_pu: 0.001
+      num_circuits: 1
+      from_endpoint_type: bus
+      from_endpoint_id: bus_0
+      to_endpoint_type: bus
+      to_endpoint_id: bus_3
+    - line_id: intra_1
+      from_node: 1
+      to_node: 1
+      from_bus: 4
+      to_bus: 7
+      capacity_mw: 2000
+      voltage_kv: 220.0
+      reactance_pu: 0.01
+      resistance_pu: 0.001
+      num_circuits: 1
+      from_endpoint_type: bus
+      from_endpoint_id: bus_4
+      to_endpoint_type: bus
+      to_endpoint_id: bus_7
+    - line_id: intra_2
+      from_node: 2
+      to_node: 2
+      from_bus: 8
+      to_bus: 11
+      capacity_mw: 2000
+      voltage_kv: 220.0
+      reactance_pu: 0.01
+      resistance_pu: 0.001
+      num_circuits: 1
+      from_endpoint_type: bus
+      from_endpoint_id: bus_8
+      to_endpoint_type: bus
+      to_endpoint_id: bus_11
+    - line_id: inter_0_1
+      from_node: 0
+      to_node: 1
+      from_bus: 0
+      to_bus: 4
+      capacity_mw: 2000
+      voltage_kv: 220.0
+      reactance_pu: 0.02
+      resistance_pu: 0.002
+      num_circuits: 1
+      from_endpoint_type: bus
+      from_endpoint_id: bus_0
+      to_endpoint_type: bus
+      to_endpoint_id: bus_4
+    - line_id: inter_1_2
+      from_node: 1
+      to_node: 2
+      from_bus: 4
+      to_bus: 8
+      capacity_mw: 2000
+      voltage_kv: 220.0
+      reactance_pu: 0.02
+      resistance_pu: 0.002
+      num_circuits: 1
+      from_endpoint_type: bus
+      from_endpoint_id: bus_4
+      to_endpoint_type: bus
+      to_endpoint_id: bus_8
+    transformers:
+    - name: GSU_0
+      from_node: 0
+      to_node: 0
+      from_bus: 0
+      to_bus: 1
+      from_voltage_kv: 220.0
+      to_voltage_kv: 34.5
+      rated_power_mva: 4000.0
+      impedance_pu: 0.05
+      resistance_pu: 0.0025
+      losses_fraction: 0.004
+    - name: StepDown_0
+      from_node: 0
+      to_node: 0
+      from_bus: 0
+      to_bus: 2
+      from_voltage_kv: 220.0
+      to_voltage_kv: 34.5
+      rated_power_mva: 4000.0
+      impedance_pu: 0.05
+      resistance_pu: 0.0025
+      losses_fraction: 0.004
+    - name: GSU_1
+      from_node: 1
+      to_node: 1
+      from_bus: 4
+      to_bus: 5
+      from_voltage_kv: 220.0
+      to_voltage_kv: 34.5
+      rated_power_mva: 4000.0
+      impedance_pu: 0.05
+      resistance_pu: 0.0025
+      losses_fraction: 0.004
+    - name: StepDown_1
+      from_node: 1
+      to_node: 1
+      from_bus: 4
+      to_bus: 6
+      from_voltage_kv: 220.0
+      to_voltage_kv: 34.5
+      rated_power_mva: 4000.0
+      impedance_pu: 0.05
+      resistance_pu: 0.0025
+      losses_fraction: 0.004
+    - name: GSU_2
+      from_node: 2
+      to_node: 2
+      from_bus: 8
+      to_bus: 9
+      from_voltage_kv: 220.0
+      to_voltage_kv: 34.5
+      rated_power_mva: 4000.0
+      impedance_pu: 0.05
+      resistance_pu: 0.0025
+      losses_fraction: 0.004
+    - name: StepDown_2
+      from_node: 2
+      to_node: 2
+      from_bus: 8
+      to_bus: 10
+      from_voltage_kv: 220.0
+      to_voltage_kv: 34.5
+      rated_power_mva: 4000.0
+      impedance_pu: 0.05
+      resistance_pu: 0.0025
+      losses_fraction: 0.004
+    generators:
+      bigplant:
+        name: BigPlant
+        type: Non-renewable
+        fuel: Gas
+        reservable: false
+        technology: tech_gas
+        Availability: null
+        frequency_hz: 60.0
+        current_type: AC
+        reservoir_spillage_allowed: true
+        life_time:
+        - 25
+        - 25
+        - 25
+        initial_age:
+        - 10
+        - 10
+        - 10
+        degradation_rate:
+        - 0.04
+        - 0.04
+        - 0.04
+        decommissioning_cost:
+        - 1000.0
+        - 1000.0
+        - 1000.0
+        rated_power:
+        - 3000.0
+        - 0.0
+        - 0.0
+        min_power:
+        - 0.0
+        - 0.0
+        - 0.0
+        min_up:
+        - 0
+        - 0
+        - 0
+        min_down:
+        - 0
+        - 0
+        - 0
+        ramp_up:
+        - 1.0
+        - 1.0
+        - 1.0
+        ramp_down:
+        - 1.0
+        - 1.0
+        - 1.0
+        eff_at_rated:
+        - 0.34
+        - 0.34
+        - 0.34
+        eff_at_min:
+        - 0.3
+        - 0.3
+        - 0.3
+        inertia:
+        - 3.16
+        - 3.16
+        - 3.16
+        risk_coefficient:
+        - 1.0
+        - 1.0
+        - 1.0
+        start_up_cost:
+        - 0.0
+        - 0.0
+        - 0.0
+        fuel_cost:
+        - 20.0
+        - 20.0
+        - 20.0
+        fixed_cost:
+        - 1.8
+        - 1.8
+        - 1.8
+        maintenance_cost:
+        - 53.86
+        - 53.86
+        - 53.86
+        droop:
+        - 0.05
+        - 0.05
+        - 0.05
+        governor_time_const:
+        - 5.0
+        - 5.0
+        - 5.0
+        reservoir_capacity:
+        - 0.0
+        - 0.0
+        - 0.0
+        reservoir_initial_level:
+        - 0.5
+        - 0.5
+        - 0.5
+        reservoir_min_level:
+        - 0.1
+        - 0.1
+        - 0.1
+        reservoir_max_level:
+        - 1.0
+        - 1.0
+        - 1.0
+        reservoir_turbine_efficiency:
+        - 0.9
+        - 0.9
+        - 0.9
+        reservoir_evaporation_rate:
+        - 0.0
+        - 0.0
+        - 0.0
+        reservoir_pump_capacity:
+        - 0.0
+        - 0.0
+        - 0.0
+        reservoir_pump_efficiency:
+        - 0.85
+        - 0.85
+        - 0.85
+        reservoir_invest_cost:
+        - 0.0
+        - 0.0
+        - 0.0
+        reservoir_invest_max:
+        - 0.0
+        - 0.0
+        - 0.0
+        invest_cost:
+        - 2200000.0
+        - 2200000.0
+        - 2200000.0
+        invest_max_power:
+        - 0.0
+        - 0.0
+        - 0.0
+    _gui_layout:
+      generators:
+        bigplant_n0:
+        - 10.01
+        - -69.99
+      batteries:
+        tinybat_n0:
+        - 10.01
+        - -69.99
+      buses:
+        bus_0:
+        - 10.0
+        - -70.0
+        bus_1:
+        - 10.01
+        - -69.99
+        bus_2:
+        - 10.02
+        - -69.98
+        bus_3:
+        - 10.03
+        - -69.97
+        bus_4:
+        - 11.0
+        - -70.0
+        bus_5:
+        - 11.01
+        - -69.99
+        bus_6:
+        - 11.02
+        - -69.98
+        bus_7:
+        - 11.03
+        - -69.97
+        bus_8:
+        - 12.0
+        - -70.0
+        bus_9:
+        - 12.01
+        - -69.99
+        bus_10:
+        - 12.02
+        - -69.98
+        bus_11:
+        - 12.03
+        - -69.97
+      transformers: {}
+      fuel_storages: {}
+      fuel_entries: {}
+    _gui_styles: {}
+plugins: {}
+risk:
+  enabled: false
+  risk_measure: expected
+  cvar_alpha: 0.95
+  cvar_lambda: 0.5
+  climate_scenarios: []
+  hazard_scenarios: []
+  hazard_data_sources: []
+  fragility_curves: []
+  combination_method: independent
+  risk_criteria:
+    eal_negligible: 1000.0
+    eal_tolerable: 50000.0
+    eal_intolerable: 500000.0
+    composite_risk_low: 0.01
+    composite_risk_medium: 0.05
+    composite_risk_high: 0.15
+  voll:
+    residential: 5000.0
+    commercial: 25000.0
+    industrial: 15000.0
+    critical: 100000.0
+  demand_base_temperature: 18.0
+  demand_heating_coefficient: 0.0
+  demand_cooling_coefficient: 0.0
+  insurance_premium_rate: 0.0
+  monte_carlo_samples: 1000
+  monte_carlo_seed: 42
+logging:
+  console_level: basic
+visual_scaling:
+  marker_min_px: 6.0
+  electrical_marker_scale: 0.02
+  energy_marker_scale: 0.02
+  fuel_marker_scale: 0.5
+  line_min_px: 1.5
+  electrical_line_scale: 0.005
+  fuel_line_scale: 0.1

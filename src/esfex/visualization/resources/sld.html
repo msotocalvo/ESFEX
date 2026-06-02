@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESFEX Single-Line Diagram</title>
+
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #FFFFFF; }
+    #sld-container { width: 100%; height: 100%; position: relative; }
+    #sld-container svg { width: 100%; height: 100%; background: #FFFFFF; }
+
+    /* Empty state */
+    #empty-message {
+        display: none;
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: 'Segoe UI', Roboto, sans-serif;
+        font-size: 15px;
+        color: #95A5A6;
+        text-align: center;
+        pointer-events: none;
+    }
+
+    /* Loading spinner */
+    #sld-loading {
+        display: none;
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        pointer-events: none;
+        z-index: 500;
+    }
+    #sld-loading .spinner {
+        width: 32px; height: 32px;
+        border: 3px solid #E2E6EA;
+        border-top-color: #4A5568;
+        border-radius: 50%;
+        animation: sld-spin 0.7s linear infinite;
+        margin: 0 auto 8px;
+    }
+    #sld-loading .spinner-text {
+        font-family: 'Segoe UI', Roboto, sans-serif;
+        font-size: 12px;
+        color: #95A5A6;
+    }
+    @keyframes sld-spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Tooltip */
+    #sld-tooltip {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        background: rgba(44, 62, 80, 0.92);
+        color: #ECF0F1;
+        padding: 6px 10px;
+        border-radius: 4px;
+        font: 12px 'Segoe UI', Roboto, sans-serif;
+        pointer-events: none;
+        max-width: 260px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    #sld-tooltip .tt-label { font-weight: 600; }
+    #sld-tooltip .tt-sub { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="sld-container"></div>
+<div id="empty-message">No elements to display.<br>Add nodes and equipment in the Geographic View.</div>
+<div id="sld-loading"><div class="spinner"></div><div class="spinner-text">Laying out diagram...</div></div>
+<div id="sld-tooltip"><span class="tt-label"></span><div class="tt-sub"></div></div>
+
+<!-- D3.js (vendored) -->
+<script src="d3.v7.min.js"></script>
+<!-- ELK.js (vendored, bundled/synchronous) -->
+<script src="elk.bundled.js"></script>
+<!-- Qt WebChannel -->
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<!-- SLD Controller -->
+<script src="sld_controller.js"></script>
+</body>
+</html>

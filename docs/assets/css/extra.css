@@ -1,0 +1,77 @@
+/* ===================================================================
+   ESFEX Documentation — Custom Styles
+   =================================================================== */
+
+/* --- Heading spacing ------------------------------------------------ */
+.md-typeset h1 {
+  margin-top: 2.5em;
+  margin-bottom: 1.2em;
+}
+
+/* Tight spacing between a centered hero block (e.g. landing-page logo
+   inside `<div align="center">`) and the heading that follows. Reduces
+   the global 2.5em → 0.5em (20%) only for that adjacency, leaving every
+   other h1 untouched. */
+.md-typeset div[align="center"] + h1 {
+  margin-top: 0.5em;
+}
+
+.md-typeset h2 {
+  margin-top: 2.0em;
+  margin-bottom: 1.0em;
+}
+
+.md-typeset h3 {
+  margin-top: 1.8em;
+  margin-bottom: 0.8em;
+}
+
+.md-typeset h4 {
+  margin-top: 1.5em;
+  margin-bottom: 0.6em;
+  font-weight: 600;
+}
+
+/* --- Tables --------------------------------------------------------- */
+.md-typeset table:not([class]) {
+  font-size: 0.85rem;
+}
+
+.md-typeset table:not([class]) th {
+  white-space: nowrap;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.md-typeset table:not([class]) td code {
+  font-size: 0.85em;
+}
+
+/* Config reference table */
+.config-table td:first-child {
+  font-family: var(--md-code-font-family);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* --- Equations ------------------------------------------------------ */
+.MathJax_Display,
+mjx-container[display="true"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* --- Layout --------------------------------------------------------- */
+.md-content__inner {
+  max-width: 960px;
+}
+
+/* --- Code blocks ---------------------------------------------------- */
+.md-typeset pre > code {
+  font-size: 0.82rem;
+}
+
+/* --- Admonitions ---------------------------------------------------- */
+.md-typeset .admonition.note {
+  border-left-width: 4px;
+}

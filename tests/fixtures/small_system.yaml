@@ -1,0 +1,178 @@
+# Small 2-node test system for ESFEX parity tests
+# Minimal configuration for fast testing
+
+name: "TestSystem"
+demand_path: null  # Use fixture data
+demand_scale: 1.0
+
+# System parameters
+loss_demand_threshold: 0.05
+life_extension_cost_factor: 0.20
+sim_rooftop: false
+target_re_penetration: 0.5
+min_annual_increment: 0.01
+max_annual_increment: 0.1
+discount_rate: 0.05
+base_lcoe: 93
+inertia_limit_threshold: 0.1
+
+# DC power flow
+dc_base_impedance: 100.0
+dc_reactance_per_km: 0.4
+dc_voltage_level_kv: 220.0
+dc_enable_angle_limits: true
+dc_max_angle_diff_deg: 30.0
+dc_slack_bus: 0
+
+# Fuels
+fuels:
+  Gas:
+    name: "Gas"
+    unit: "ton"
+    emission_factor: 0.20
+    energy_content: 12.28
+    price_base: 110
+    price_growth_rate: 0.015
+  Sun:
+    name: "Sun"
+    unit: null
+    emission_factor: 0.0
+    energy_content: null
+    price_base: 0.0
+    price_growth_rate: 0.0
+  Wind:
+    name: "Wind"
+    unit: null
+    emission_factor: 0.0
+    energy_content: null
+    price_base: 0.0
+    price_growth_rate: 0.0
+
+# Penalties
+penalties:
+  loss_of_load: 10000000
+  loss_of_reserve_static: 100
+  loss_of_reserve_dynamic: 100
+  co2_cost: 10
+
+# CO2 budget
+co2_budget:
+  enabled: true
+  annual_budget: 100000
+
+# Network (2 nodes)
+nodes:
+  nodes_connections: [0, 200, 200, 0]  # 200 MW link
+  reserve_static: [10, 10]
+  reserve_dynamic: [20, 20]
+  reserve_duration: [2, 2]
+  losses: [0.001, 0.001]
+  transference_invest_cost: [13000, 13000]
+  transference_invest_max: [100, 100]
+
+fuel_transport_distances:
+  - [0, 100]
+  - [100, 0]
+
+# Generators
+generators:
+  gas_turbine:
+    name: "Gas turbine"
+    type: "Non-renewable"
+    fuel: "Gas"
+    technology: "Gas turbines"
+    reservable: true
+    life_time: [25, 25]
+    initial_age: [10, 10]
+    degradation_rate: [0.04, 0.04]
+    decommissioning_cost: [1000, 1000]
+    rated_power: [100, 50]
+    min_power: [0.3, 0.3]
+    min_up: [4, 4]
+    min_down: [2, 2]
+    ramp_up: [0.04, 0.04]
+    ramp_down: [0.04, 0.04]
+    eff_at_rated: [0.45, 0.45]
+    eff_at_min: [0.40, 0.40]
+    inertia: [6.0, 6.0]
+    start_up_cost: [500, 500]
+    fuel_cost: [94, 94]
+    fixed_cost: [6.6, 6.6]
+    maintenance_cost: [28.8, 28.8]
+    invest_cost: [3900000, 3900000]
+    invest_max_power: [0, 0]
+    availability_file: null  # Use 1.0 default
+
+  solar:
+    name: "Solar"
+    type: "Renewable"
+    fuel: "Sun"
+    technology: "Solar PV"
+    reservable: false
+    life_time: [25, 25]
+    initial_age: [0, 0]
+    degradation_rate: [0.005, 0.005]
+    decommissioning_cost: [300, 300]
+    rated_power: [50, 80]
+    min_power: [0, 0]
+    min_up: [0, 0]
+    min_down: [0, 0]
+    ramp_up: [1.0, 1.0]
+    ramp_down: [1.0, 1.0]
+    eff_at_rated: [0.98, 0.98]
+    eff_at_min: [0.98, 0.98]
+    inertia: [0, 0]
+    start_up_cost: [0, 0]
+    fuel_cost: [0, 0]
+    fixed_cost: [5.0, 5.0]
+    maintenance_cost: [5.4, 5.4]
+    invest_cost: [900000, 900000]
+    invest_max_power: [200, 200]
+    availability_file: null  # Use fixture
+
+  wind:
+    name: "Wind"
+    type: "Renewable"
+    fuel: "Wind"
+    technology: "Wind turbine"
+    reservable: false
+    life_time: [25, 25]
+    initial_age: [0, 0]
+    degradation_rate: [0.005, 0.005]
+    decommissioning_cost: [200, 200]
+    rated_power: [30, 60]
+    min_power: [0, 0]
+    min_up: [0, 0]
+    min_down: [0, 0]
+    ramp_up: [1.0, 1.0]
+    ramp_down: [1.0, 1.0]
+    eff_at_rated: [0.98, 0.98]
+    eff_at_min: [0.98, 0.98]
+    inertia: [0.5, 0.5]
+    start_up_cost: [0, 0]
+    fuel_cost: [0, 0]
+    fixed_cost: [55, 55]
+    maintenance_cost: [10, 10]
+    invest_cost: [1200000, 1200000]
+    invest_max_power: [100, 100]
+    availability_file: null  # Use fixture
+
+# Batteries
+batteries:
+  li_ion:
+    name: "Li-ion Battery"
+    type: "Storage"
+    capacity: [50, 80]
+    max_charge_power: [25, 40]
+    max_discharge_power: [25, 40]
+    charge_efficiency: [0.95, 0.95]
+    discharge_efficiency: [0.95, 0.95]
+    soc_min: [0.1, 0.1]
+    soc_max: [0.9, 0.9]
+    soc_initial: [0.5, 0.5]
+    self_discharge: [0.0001, 0.0001]
+    invest_cost_power: [200000, 200000]
+    invest_cost_capacity: [150000, 150000]
+    invest_max_power: [50, 50]
+    invest_max_capacity: [100, 100]
+    life_time: [15, 15]

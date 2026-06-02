@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESFEX Run Output</title>
+<link rel="stylesheet" href="xterm.css" />
+<style>
+  /* Fill the host QWebEngineView; no scrollbars on the body so the
+     scrollback rendered by xterm.js stays the authoritative one. */
+  html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+    background: #1e1e1e; }
+  #terminal { width: 100%; height: 100%; }
+  /* xterm injects its own viewport; this is just to keep the bg clean
+     before xterm finishes its first paint. */
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="xterm.js"></script>
+<script src="xterm-addon-fit.js"></script>
+<script>
+"use strict";
+
+// ── State ─────────────────────────────────────────────────────────────
+//
+// `term`         — the xterm.js Terminal instance
+// `fitAddon`     — the resize addon, kept around so we can call fit()
+// `bridge`       — the Python-side RunOutputView once QWebChannel hands
+//                  it to us; null until ready
+// `pendingInput` — keystrokes typed before the bridge handshake completes
+//                  (queued so we don't drop input during the first frame)
+//
+// QWebChannel handshake is async; user can theoretically focus + type
+// before it resolves, so we queue keys and flush on connect.
+let term = null;
+let fitAddon = null;
+let bridge = null;
+const pendingInput = [];
+
+function _initTerminal() {
+    term = new Terminal({
+        fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
+        fontSize: 13,
+        cursorBlink: true,
+        // The host process (PTY child) sees real terminal sequences; let
+        // it render them. Disable convertEol so a bare \n stays as \n
+        // (PTYs emit \r\n on their own).
+        convertEol: false,
+        scrollback: 5000,
+        theme: {
+            background: '#1e1e1e',
+            foreground: '#d4d4d4',
+            cursor:     '#d4d4d4',
+        },
+    });
+
+    // FitAddon ships under different global namespaces depending on the
+    // bundle (AMD / UMD / window.FitAddon). Try the common ones so a
+    // future xterm bump doesn't silently break the resize behaviour.
+    let FitCtor = null;
+    if (typeof FitAddon !== 'undefined') {
+        FitCtor = FitAddon.FitAddon || FitAddon;
+    } else if (typeof window.FitAddon !== 'undefined') {
+        FitCtor = window.FitAddon.FitAddon || window.FitAddon;
+    }
+    if (FitCtor) {
+        try {
+            fitAddon = new FitCtor();
+            term.loadAddon(fitAddon);
+        } catch (e) {
+            console.warn('FitAddon load failed:', e);
+            fitAddon = null;
+        }
+    }
+
+    term.open(document.getElementById('terminal'));
+    _fit();
+
+    // User-typed keystrokes go to the PTY through the bridge. When the
+    // bridge isn't connected yet we queue them; the queue is drained
+    // in _onBridgeReady.
+    term.onData(function(data) {
+        if (bridge !== null) {
+            bridge.user_input(data);
+        } else {
+            pendingInput.push(data);
+        }
+    });
+
+    // Tell the PTY about size changes so curses-style apps and Rich's
+    // Progress render correctly.
+    term.onResize(function(size) {
+        if (bridge !== null) {
+            bridge.user_resize(size.rows, size.cols);
+        }
+    });
+}
+
+function _fit() {
+    if (!fitAddon || !term) return;
+    try {
+        fitAddon.fit();
+    } catch (e) {
+        // Race: container may not be laid out yet on the very first call.
+        // The window resize listener below will retry.
+    }
+}
+
+window.addEventListener('resize', function() {
+    // Debounce-light: just call fit directly; xterm itself handles
+    // rapid resize events fine.
+    _fit();
+});
+
+function _onBridgeReady(channel) {
+    bridge = channel.objects.runner;
+
+    // Drain any keys typed during the handshake.
+    while (pendingInput.length) {
+        const data = pendingInput.shift();
+        try { bridge.user_input(data); } catch (e) { /* dropped */ }
+    }
+
+    // Send the initial size so the PTY starts at the right geometry.
+    if (term) {
+        try {
+            bridge.user_resize(term.rows, term.cols);
+        } catch (e) { /* ignore */ }
+    }
+}
+
+// ── PTY-to-terminal data path ─────────────────────────────────────────
+//
+// The bridge gives us bytes as base64 strings (the safest way to ferry
+// arbitrary 8-bit data over QWebChannel — JSON can't carry NUL or
+// invalid UTF-8 mid-sequence). `_writeBase64` is invoked from Python
+// via QMetaObject.invokeMethod on the page; the global function name
+// is what runJavaScript() addresses.
+function _writeBase64(b64) {
+    if (!term) return;
+    // atob decodes base64 to a binary string of charcodes; xterm.write
+    // accepts either Uint8Array or string, but Uint8Array preserves
+    // bytes faithfully (no Unicode normalisation surprises).
+    const binStr = atob(b64);
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) {
+        bytes[i] = binStr.charCodeAt(i);
+    }
+    term.write(bytes);
+}
+
+function _clear() {
+    if (term) term.clear();
+}
+
+function _appendNotice(text) {
+    // Used by the wrapper to print "[process exited: N]" etc. without
+    // going through the PTY. Wrap with subtle colour so the user can
+    // tell process output apart from wrapper notices.
+    if (!term) return;
+    term.writeln('\x1b[2m' + text + '\x1b[0m');
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────────────
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _initTerminal);
+} else {
+    _initTerminal();
+}
+
+// Open the QWebChannel — runs in parallel with terminal init; whichever
+// finishes last triggers the input drain. Defensive: the page must work
+// even if QWebChannel isn't injected (e.g. opened directly in a browser
+// for development).
+if (typeof QWebChannel !== 'undefined' && typeof qt !== 'undefined' && qt.webChannelTransport) {
+    new QWebChannel(qt.webChannelTransport, _onBridgeReady);
+}
+</script>
+</body>
+</html>

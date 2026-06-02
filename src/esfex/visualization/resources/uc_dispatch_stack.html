@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>uc_dispatch_stack</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #FFFFFF;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #2C3E50;
+  }
+  #plot { width: 100%; height: 100vh; }
+  .empty {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #7F8C8D; font-size: 14px; text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div id="plot"></div>
+  <div id="status" class="empty">Loading…</div>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script src="plotly.min.js"></script>
+  <script src="font_scale.js"></script>
+  <script src="chart_theme.js"></script>
+  <script src="uc_dispatch_stack.js"></script>
+</body>
+</html>

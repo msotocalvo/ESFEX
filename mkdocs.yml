@@ -1,0 +1,176 @@
+site_name: ESFEX Documentation
+site_description: >-
+  Hybrid Python/Julia power system optimization model for
+  capacity expansion planning and operational dispatch.
+site_url: https://esfex.readthedocs.io/
+repo_url: https://github.com/msotocalvo/ESFEX
+repo_name: msotocalvo/ESFEX
+
+copyright: Copyright &copy; 2025-2026 Manuel. Apache License 2.0.
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - autorefs
+
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - attr_list
+  - md_in_html
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - footnotes
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+extra_css:
+  - assets/css/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/msotocalvo/ESFEX
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+    - Core Concepts: getting-started/concepts.md
+    - Architecture: getting-started/architecture.md
+  - Tutorials:
+    - Single-Node System: tutorials/single-system.md
+    - Multi-Node Network: tutorials/multi-node.md
+    - Multi-System: tutorials/multi-system.md
+    - Stochastic Planning: tutorials/stochastic.md
+    - Near-Optimal Alternatives: tutorials/mga.md
+    - Sensitivity Analysis: tutorials/sensitivity-analysis.md
+    - EV Integration: tutorials/ev-integration.md
+    - Primary Energy: tutorials/primary-energy.md
+    - Custom Scenarios: tutorials/custom-scenarios.md
+    - GUI Workflow: tutorials/gui-workflow.md
+  - User Guide:
+    - CLI Reference: user-guide/cli.md
+    - Configuration: user-guide/configuration.md
+    - Master Problem: user-guide/master-problem.md
+    - Demand Data: user-guide/demand-data.md
+    - Availability Profiles: user-guide/availability-profiles.md
+    - Results Export: user-guide/results-export.md
+    - Solver Guide: user-guide/solver-guide.md
+    - Development Zones: user-guide/development-zones.md
+  - GUI Editor:
+    - Overview: gui/overview.md
+    - Map Editor: gui/map-editor.md
+    - Element Forms: gui/element-forms.md
+    - System Management: gui/system-management.md
+    - Inter-System Links: gui/inter-system-links.md
+    - Global Settings: gui/global-settings.md
+    - Scripting & Automation: gui/scripting.md
+    - Plugin Management: gui/plugins.md
+  - Analysis Workflows:
+    - Overview: workflows/index.md
+    - Solar PV Assessment: workflows/solar-pv.md
+    - Wind Assessment: workflows/wind.md
+    - OTEC Assessment: workflows/otec.md
+    - Rooftop Solar: workflows/rooftop-solar.md
+    - Demand Distribution: workflows/demand-distribution.md
+    - Grid Auto-Mapping: workflows/grid-auto-mapping.md
+    - EV & V2G Assessment: workflows/ev-v2g.md
+    - Financial Analysis: workflows/financial-analysis.md
+  - Mathematical Formulation:
+    - Overview & Notation: formulation/overview.md
+    - Operational Dispatch: formulation/operational-dispatch.md
+    - Capacity Expansion: formulation/capacity-expansion.md
+    - DC Power Flow: formulation/dc-power-flow.md
+    - Primary Energy: formulation/primary-energy.md
+    - Electrolyzer: formulation/electrolyzer.md
+    - EV Model: formulation/ev-model.md
+    - Rooftop Solar: formulation/rooftop-solar.md
+    - AC Optimal Power Flow: formulation/ac-power-flow.md
+    - Frequency Stability: formulation/frequency-stability.md
+    - Stochastic Programming: formulation/stochastic-programming.md
+    - Risk & Resilience: formulation/risk-resilience.md
+  - API Reference:
+    - Overview: api/index.md
+    - Config Schema: api/config-schema.md
+    - Config Loader: api/config-loader.md
+    - Runner: api/runner.md
+    - Bridge Adapters: api/bridge-adapters.md
+    - Julia Setup: api/bridge-julia-setup.md
+    - I/O Demand: api/io-demand.md
+    - I/O Exporter: api/io-exporter.md
+    - EV Model: api/models-ev.md
+    - EV Adoption: api/models-ev-adoption.md
+    - EV Analysis: api/models-ev-analysis.md
+    - Rooftop Solar: api/models-solar-rooftop.md
+    - Financial Analysis: api/models-financial-analysis.md
+    - Utilities: api/utils.md
+    - Sensitivity: api/sensitivity.md
+    - Julia API: api/julia-api.md
+  - Reference:
+    - Config Reference: reference/config-reference.md
+    - HDF5 Output Schema: reference/hdf5-output-schema.md
+    - Constraint Catalog: reference/constraint-catalog.md
+    - Glossary: reference/glossary.md
+    - Changelog: reference/changelog.md
+    - Bibliography: reference/bibliography.md
+  - Contributing:
+    - Development Setup: contributing/development-setup.md
+    - Testing: contributing/testing.md
+    - Julia Development: contributing/julia-development.md

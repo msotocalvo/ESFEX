@@ -1,0 +1,142 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "esfex"
+version = "0.1.0"
+description = "ESFEX: Energy System FlEXibility — Power System Optimization"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Manuel Soto Calvo", email = "manuel.sotocalvo@gmail.com"},
+    {name = "Han Soo Lee"},
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+keywords = ["power systems", "optimization", "renewable energy", "flexibility", "JuMP"]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "h5py>=3.8.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "typer>=0.9.0",
+    "juliacall>=0.9.14",
+    "networkx>=3.0",
+    "openpyxl>=3.1.0",
+    "rich>=13.0.0",
+    "psutil>=5.9.0",
+    "scipy>=1.10.0",
+    "windrex>=0.1.0",
+    "solarex>=0.1.0",
+    "rooftex>=0.1.0",
+    "evrex>=0.1.0",
+    "PySide6>=6.5.0",
+    "superqt>=0.6.0",
+    "markdown>=3.4",
+    # Real PTY backend for the embedded xterm.js Run Output view in
+    # the GUI. POSIX-only; the RunOutputView surfaces a friendly
+    # message and falls back to the legacy QProcess console if the
+    # import fails (so Windows users keep working).
+    "ptyprocess>=0.7.0; sys_platform != 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+viz = [
+    "matplotlib>=3.7.0",
+    "plotly>=5.14.0",
+    "kaleido>=0.2.1",
+]
+sensitivity = [
+    "SALib>=1.4.7",
+    "matplotlib>=3.7.0",
+]
+benchmark = [
+    "pypsa>=0.28.0",
+    "pandapower>=2.14.0",
+    "pypower>=5.1.0",
+    "matpower>=7.1.0",
+]
+workflows = [
+    "pvlib>=0.11.0",
+    "geopandas>=0.14.0",
+    "duckdb>=1.0.0",
+    "shapely>=2.0.0",
+    "requests>=2.28.0",
+    "overpy>=0.7",
+    "otex>=0.1.0",
+    "scikit-learn>=1.3.0",
+    "atlite>=0.2.11",
+    "rasterio>=1.3.0",
+]
+ml = [
+    "xgboost>=2.0.0",
+]
+dl = [
+    "torch>=2.0.0",
+    "pytorch-lightning>=2.0.0",
+    "pytorch-forecasting>=1.0.0",
+]
+
+[project.scripts]
+esfex = "esfex.cli:_entrypoint"
+
+[project.urls]
+Homepage = "https://github.com/msotocalvo/ESFEX"
+Documentation = "https://github.com/msotocalvo/ESFEX#readme"
+Repository = "https://github.com/msotocalvo/ESFEX"
+Issues = "https://github.com/msotocalvo/ESFEX/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+esfex = [
+    "julia/**/*",
+    "visualization/resources/**/*",
+    "visualization/translations/**/*.json",
+    "icons/**/*",
+    "plugins/**/*.json",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+markers = [
+    "julia: marks tests as requiring Julia (skip if Julia unavailable)",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

@@ -1,0 +1,8 @@
+{
+  "name": "availability_generator",
+  "version": "1.0.0",
+  "description": "Generate hourly availability profiles for Solar/Wind generators from weather data",
+  "author": "ESFEX",
+  "category": "data",
+  "priority": 0
+}

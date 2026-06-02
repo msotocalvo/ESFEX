@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESFEX Results Dashboard</title>
+<style>
+  /* Dashboard styling. Colours come from CSS custom properties that
+     dashboard.js sets at bootstrap from the Python theme. Defaults
+     below are sane fallbacks (the GUI's default light palette) so
+     the page is readable even if the bridge handshake hasn't run
+     yet. */
+  :root {
+    --theme-bg:         #FFFFFF;
+    --theme-bg-2:       #F5F7FA;
+    --theme-bg-el:      #FFFFFF;
+    --theme-text:       #2C3E50;
+    --theme-text-muted: #7F8C8D;
+    --theme-border:     #DEE2E6;
+    --theme-accent:     #2980B9;
+    --theme-accent2:    #27AE60;
+    --theme-ok:         #27AE60;
+    --theme-warn:       #F39C12;
+    --theme-err:        #E74C3C;
+    --theme-selection:  #D6EAF8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--theme-bg);
+    color: var(--theme-text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  .root { display: flex; flex-direction: column; height: 100%; }
+  .filterbar, .kpibar { flex-shrink: 0; }
+  main { flex: 1; overflow-y: auto; padding: 12px 16px; }
+
+  /* ── Filter bar (HIDDEN) ─────────────────────────────────
+   * The host Result Viewer provides the canonical System combo
+   * and Year slider in its top toolbar. The inner controls stay
+   * in the DOM so existing JS (bootstrap, brush, status text)
+   * can keep addressing them by id without forks. */
+  .filterbar {
+    display: none !important;
+  }
+  .filterbar label { color: var(--theme-text-muted); font-weight: 500; }
+  .filterbar select, .filterbar .range-display {
+    background: var(--theme-bg);
+    color: var(--theme-text);
+    border: 1px solid var(--theme-border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+  .filterbar .range-display {
+    min-width: 140px; text-align: center;
+    color: var(--theme-accent);
+    font-weight: 600;
+  }
+  .filterbar .reset-btn {
+    background: transparent; color: var(--theme-text-muted);
+    border: 1px solid var(--theme-border);
+    border-radius: 4px;
+    padding: 4px 10px; cursor: pointer;
+    font-size: 12px;
+  }
+  .filterbar .reset-btn:hover {
+    background: var(--theme-selection);
+    color: var(--theme-text);
+  }
+
+  /* ── KPI bar ───────────────────────────────────────────── */
+  .kpibar {
+    display: flex; gap: 10px;
+    padding: 12px 16px;
+    background: var(--theme-bg-2);
+    border-bottom: 1px solid var(--theme-border);
+  }
+  .kpi {
+    flex: 1;
+    background: var(--theme-bg-el);
+    border: 1px solid var(--theme-border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    min-width: 120px;
+  }
+  .kpi .label {
+    color: var(--theme-text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .kpi .value {
+    color: var(--theme-text);
+    font-size: 22px;
+    font-weight: 700;
+    margin-top: 4px;
+    line-height: 1.2;
+  }
+  .kpi .delta {
+    font-size: 11px;
+    margin-top: 4px;
+    font-weight: 500;
+  }
+  .kpi .delta.up   { color: var(--theme-ok); }
+  .kpi .delta.down { color: var(--theme-err); }
+  .kpi .delta.flat { color: var(--theme-text-muted); }
+
+  /* ── Plot cards ────────────────────────────────────────── */
+  .card {
+    background: var(--theme-bg-el);
+    border: 1px solid var(--theme-border);
+    border-radius: 6px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--theme-border);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--theme-text);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card-header .hint {
+    font-size: 11px;
+    color: var(--theme-text-muted);
+    font-weight: 400;
+  }
+  .plot { width: 100%; height: 320px; }
+  .plot.tall { height: 420px; }
+
+  .empty {
+    color: var(--theme-text-muted);
+    text-align: center;
+    padding: 50px 20px;
+    font-size: 14px;
+  }
+
+  /* Mini KPI chips used inside the year drill-down panel. Smaller
+     than the top KPI bar cards — they annotate the dispatch chart. */
+  .mini-kpi {
+    background: var(--theme-bg-2);
+    border: 1px solid var(--theme-border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-width: 90px;
+  }
+  .mini-kpi .label {
+    color: var(--theme-text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .mini-kpi .value {
+    color: var(--theme-text);
+    font-size: 15px;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div class="root">
+
+  <!-- ── FILTER BAR ─────────────────────────────────────────── -->
+  <div class="filterbar">
+    <label for="system-select">System</label>
+    <select id="system-select"></select>
+
+    <label for="year-range">Year range</label>
+    <span id="year-range" class="range-display">—</span>
+    <button id="reset-range" class="reset-btn" title="Clear brush and show all years">
+      Reset range
+    </button>
+
+    <span style="flex:1"></span>
+
+    <span id="status" style="color:#8b95a3; font-size:12px;"></span>
+  </div>
+
+  <!-- ── KPI BAR (sticky) ───────────────────────────────────── -->
+  <div class="kpibar" id="kpibar">
+    <!-- KPIs are populated by renderKpis(); start with placeholders -->
+    <div class="kpi" data-key="cost">
+      <div class="label">Total Cost</div>
+      <div class="value">—</div>
+      <div class="delta"></div>
+    </div>
+    <div class="kpi" data-key="re_share">
+      <div class="label">RE Share</div>
+      <div class="value">—</div>
+      <div class="delta"></div>
+    </div>
+    <div class="kpi" data-key="co2">
+      <div class="label">CO₂ Emissions</div>
+      <div class="value">—</div>
+      <div class="delta"></div>
+    </div>
+    <div class="kpi" data-key="load_shed">
+      <div class="label">Load Shed</div>
+      <div class="value">—</div>
+      <div class="delta"></div>
+    </div>
+    <div class="kpi" data-key="investment">
+      <div class="label">New Capacity</div>
+      <div class="value">—</div>
+      <div class="delta"></div>
+    </div>
+  </div>
+
+  <!-- ── MAIN: stacked cards ─────────────────────────────────── -->
+  <main>
+
+    <div class="card">
+      <div class="card-header">
+        System Trajectory
+        <span class="hint">Brush horizontally to filter • Click a point for year detail</span>
+      </div>
+      <div id="trajectory" class="plot tall"></div>
+    </div>
+
+    <!-- Drill-down panel (collapsed by default). Appears after the
+         user clicks a year point in the trajectory. Sits between the
+         Trajectory and the Mix so it's contextually next to the
+         chart you just clicked. -->
+    <div id="year-detail" class="card" style="display:none">
+      <div class="card-header">
+        <span>Year <span id="year-detail-label">—</span> — Hourly dispatch</span>
+        <button id="year-detail-close" class="reset-btn"
+                title="Close the year drill-down panel">Close ✕</button>
+      </div>
+      <div id="year-detail-kpis" style="display:flex; gap:8px;
+                                        padding:8px 14px;
+                                        flex-wrap:wrap;">
+        <!-- mini KPI strips inserted by JS -->
+      </div>
+      <div id="year-detail-dispatch" class="plot tall"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        Generation Mix Evolution
+        <span class="hint">Click a technology in the legend to toggle</span>
+      </div>
+      <div id="mix" class="plot tall"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        Cost Composition
+        <span class="hint" id="cost-hint">Breakdown of the total system cost</span>
+      </div>
+      <div id="cost" class="plot tall"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Scripts ──────────────────────────────────────────────── -->
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="plotly.min.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>
