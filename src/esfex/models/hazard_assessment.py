@@ -32,6 +32,10 @@ from typing import Any, Callable, Literal
 import numpy as np
 from scipy.stats import norm
 
+# NumPy 2.0 renamed ``np.trapz`` to ``np.trapezoid`` and removed the old name
+# in later 2.x releases. Use whichever the installed NumPy provides.
+_trapezoid = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+
 logger = logging.getLogger(__name__)
 
 # Default local cache for downloaded hazard data
@@ -3463,8 +3467,8 @@ class ResilienceAnalyzer:
 
         perf = np.clip(perf, 0, 1)
         # R = 1 - (A_ideal - A_actual) / A_ideal
-        a_ideal = float(np.trapz(np.ones_like(t_steps), t_steps))
-        a_actual = float(np.trapz(perf, t_steps))
+        a_ideal = float(_trapezoid(np.ones_like(t_steps), t_steps))
+        a_actual = float(_trapezoid(perf, t_steps))
         r_idx = a_actual / a_ideal if a_ideal > 0 else 1.0
         return r_idx, t_steps, perf
 
