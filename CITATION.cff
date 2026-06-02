@@ -20,6 +20,7 @@ authors:
     orcid: "https://orcid.org/0000-0001-7749-0317"
 version: "0.1.0"
 date-released: "2026-06-02"
+doi: "10.5281/zenodo.20504838"
 license: Apache-2.0
 repository-code: "https://github.com/msotocalvo/ESFEX"
 url: "https://github.com/msotocalvo/ESFEX"

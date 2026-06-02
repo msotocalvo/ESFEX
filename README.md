@@ -2,10 +2,10 @@
   <img src="docs/assets/esfex.png" alt="ESFEX Logo" width="460"/>
 </p>
 
-<h1 align="center">ESFEX — Energy System FlEXibility</h1>
+<h1 align="center">ESFEX — Energy System Flexibility Studio</h1>
 
 <p align="center">
-  <strong>A hybrid Python/Julia framework for power system capacity expansion and operational dispatch under high renewable penetration</strong>
+  <strong>A framework for power system capacity expansion and operational dispatch under high renewable penetration</strong>
 </p>
 
 <p align="center">
@@ -20,6 +20,9 @@
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
+  </a>
+  <a href="https://doi.org/10.5281/zenodo.20504838">
+    <img src="https://zenodo.org/badge/1256767759.svg" alt="DOI">
   </a>
   <a href="https://github.com/astral-sh/ruff">
     <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff">
@@ -305,7 +308,8 @@ If you use ESFEX in academic work, please cite:
   title   = {ESFEX: Energy System FlEXibility — Power System Optimization},
   author  = {Soto Calvo, Manuel and Lee, Han Soo},
   year    = {2026},
-  url     = {https://github.com/msotocalvo/ESFEX},
+  doi     = {10.5281/zenodo.20504838},
+  url     = {https://doi.org/10.5281/zenodo.20504838},
   version = {0.1.0},
   license = {Apache-2.0}
 }
