@@ -44,10 +44,22 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 def _find_nearest_node(
     lat: float, lng: float, nodes: list[GuiNode],
 ) -> tuple[int | None, float]:
-    """Nodes are abstract (no coordinates). Return first node."""
-    if nodes:
-        return nodes[0].index, 0.0
-    return None, float("inf")
+    """Return ``(index, distance_km)`` of the nearest node by centroid.
+
+    Nodes left at the ``(0, 0)`` default centroid are treated as having no
+    location and are ignored, so a freshly-created abstract node does not act
+    as a spurious snap target. Returns ``(None, inf)`` when no node has a
+    usable centroid.
+    """
+    best_idx: int | None = None
+    best_dist = float("inf")
+    for n in nodes:
+        if n.centroid_lat == 0.0 and n.centroid_lng == 0.0:
+            continue
+        d = _haversine_km(lat, lng, n.centroid_lat, n.centroid_lng)
+        if d < best_dist:
+            best_idx, best_dist = n.index, d
+    return best_idx, best_dist
 
 
 def import_geojson(
@@ -116,7 +128,8 @@ def import_geojson(
             state.nodes.append(GuiNode(
                 index=idx,
                 name=name,
-                coordinate=GeoPoint(lat, lng, name),
+                centroid_lat=lat,
+                centroid_lng=lng,
             ))
             result.nodes_added += 1
         except Exception as exc:

@@ -50,11 +50,23 @@ def test_find_nearest_node_empty():
     assert dist == float("inf")
 
 
-def test_find_nearest_node_returns_first():
+def test_find_nearest_node_ignores_unlocated_nodes():
+    # Nodes left at the (0, 0) default centroid have no location and are
+    # ignored, so there is no nearest node.
     nodes = [GuiNode(index=7, name="a"), GuiNode(index=9, name="b")]
     idx, dist = _find_nearest_node(1.0, 2.0, nodes)
+    assert idx is None
+    assert dist == float("inf")
+
+
+def test_find_nearest_node_picks_closest_by_centroid():
+    nodes = [
+        GuiNode(index=7, name="a", centroid_lat=20.0, centroid_lng=10.0),
+        GuiNode(index=9, name="b", centroid_lat=40.0, centroid_lng=30.0),
+    ]
+    idx, dist = _find_nearest_node(21.0, 11.0, nodes)
     assert idx == 7
-    assert dist == 0.0
+    assert dist > 0.0
 
 
 # --------------------------------------------------------------------------
@@ -99,7 +111,7 @@ def test_geometry_only_object_wrapped(tmp_path):
 # Point features (currently always error due to GuiNode signature mismatch)
 # --------------------------------------------------------------------------
 
-def test_point_feature_triggers_warning_not_node(tmp_path):
+def test_point_feature_creates_node(tmp_path):
     fc = {
         "type": "FeatureCollection",
         "features": [
@@ -113,10 +125,14 @@ def test_point_feature_triggers_warning_not_node(tmp_path):
     path = _write(tmp_path, fc)
     state = GuiSystemState()
     result = import_geojson(state, path)
-    # GuiNode(coordinate=...) raises TypeError -> caught -> warning, no node.
-    assert result.nodes_added == 0
-    assert len(state.nodes) == 0
-    assert any("Point feature error" in w for w in result.warnings)
+    # A valid Point feature creates a node carrying its centroid.
+    assert result.nodes_added == 1
+    assert len(state.nodes) == 1
+    node = state.nodes[0]
+    assert node.name == "P1"
+    # GeoJSON coordinates are [lng, lat] = [10, 20].
+    assert node.centroid_lat == 20.0
+    assert node.centroid_lng == 10.0
 
 
 def test_point_with_invalid_coordinates(tmp_path):
@@ -150,8 +166,10 @@ def test_point_near_existing_node_skipped(tmp_path):
     }
     path = _write(tmp_path, fc)
     state = GuiSystemState()
-    # Seed a node so _find_nearest_node returns (0, 0.0) < threshold -> skip.
-    state.nodes.append(GuiNode(index=0, name="existing"))
+    # Seed an existing node at the SAME location ([lng,lat]=[10,20] -> lat=20,
+    # lng=10) so the new point snaps to it and is skipped.
+    state.nodes.append(GuiNode(index=0, name="existing",
+                               centroid_lat=20.0, centroid_lng=10.0))
     result = import_geojson(state, path)
     assert result.nodes_added == 0
     assert any("within" in w and "existing Node 0" in w for w in result.warnings)
@@ -210,7 +228,7 @@ def test_linestring_endpoints_same_node_skipped(tmp_path):
                 "type": "Feature",
                 "geometry": {
                     "type": "LineString",
-                    "coordinates": [[0, 0], [1, 1]],
+                    "coordinates": [[10.0, 20.0], [10.001, 20.001]],
                 },
                 "properties": {},
             }
@@ -218,21 +236,42 @@ def test_linestring_endpoints_same_node_skipped(tmp_path):
     }
     path = _write(tmp_path, fc)
     state = GuiSystemState()
-    state.nodes.append(GuiNode(index=0, name="n0"))
+    # A single located node that both (nearby) endpoints snap to -> same node.
+    state.nodes.append(GuiNode(index=0, name="n0",
+                               centroid_lat=20.0, centroid_lng=10.0))
     result = import_geojson(state, path)
     assert result.lines_added == 0
     assert any("same node" in w for w in result.warnings)
 
 
 def test_linestring_created_with_waypoints_and_capacity(tmp_path):
-    # Two nodes -> both endpoints snap to node 0 (always first). To get two
-    # distinct snapped indices we patch is impossible without changing the
-    # source; instead we confirm that with a single node + capacity given,
-    # the same-node guard fires. To exercise a successful line creation we
-    # need from_idx != to_idx, which _find_nearest_node cannot produce
-    # (always returns nodes[0]). So the successful-creation branch is
-    # unreachable via this helper; document it here.
-    pass
+    # Two located nodes far apart: the endpoints snap to distinct nodes and a
+    # transmission line is created, keeping the intermediate point as waypoint.
+    fc = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[10.0, 20.0], [10.5, 20.5], [11.0, 21.0]],
+                },
+                "properties": {"capacity_mw": 250.0},
+            }
+        ],
+    }
+    path = _write(tmp_path, fc)
+    state = GuiSystemState()
+    state.nodes.append(GuiNode(index=0, name="n0",
+                               centroid_lat=20.0, centroid_lng=10.0))
+    state.nodes.append(GuiNode(index=1, name="n1",
+                               centroid_lat=21.0, centroid_lng=11.0))
+    result = import_geojson(state, path, snap_threshold_km=100.0)
+    assert result.lines_added == 1
+    line = state.transmission_lines[0]
+    assert {line.from_node, line.to_node} == {0, 1}
+    assert line.capacity_mw == 250.0
+    assert len(line.waypoints) == 1  # middle coordinate kept as waypoint
 
 
 def test_linestring_feature_error_caught(tmp_path):
