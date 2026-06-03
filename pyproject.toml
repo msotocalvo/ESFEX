@@ -100,9 +100,9 @@ dl = [
 esfex = "esfex.cli:_entrypoint"
 
 [project.urls]
-Homepage = "https://github.com/msotocalvo/ESFEX"
-Documentation = "https://github.com/msotocalvo/ESFEX#readme"
-Repository = "https://github.com/msotocalvo/ESFEX"
+Homepage = "https://github.com/Net-Zero-Horizon/ESFEX"
+Documentation = "https://github.com/Net-Zero-Horizon/ESFEX#readme"
+Repository = "https://github.com/Net-Zero-Horizon/ESFEX"
 
 [tool.setuptools.packages.find]
 where = ["src"]

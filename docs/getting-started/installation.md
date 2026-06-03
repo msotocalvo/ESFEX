@@ -93,7 +93,7 @@ For contributing to ESFEX or running from source:
 
 ```bash
 # Clone the repository
-git clone https://github.com/msotocalvo/ESFEX.git
+git clone https://github.com/Net-Zero-Horizon/ESFEX.git
 cd esfex
 
 # Create a virtual environment (recommended)

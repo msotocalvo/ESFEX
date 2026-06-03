@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/msotocalvo/ESFEX/actions/workflows/ci.yml">
-    <img src="https://github.com/msotocalvo/ESFEX/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <a href="https://github.com/Net-Zero-Horizon/ESFEX/actions/workflows/ci.yml">
+    <img src="https://github.com/Net-Zero-Horizon/ESFEX/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
-  <a href="https://codecov.io/gh/msotocalvo/ESFEX">
-    <img src="https://codecov.io/gh/msotocalvo/ESFEX/branch/main/graph/badge.svg" alt="codecov">
+  <a href="https://codecov.io/gh/Net-Zero-Horizon/ESFEX">
+    <img src="https://codecov.io/gh/Net-Zero-Horizon/ESFEX/branch/main/graph/badge.svg" alt="codecov">
   </a>
   <a href="https://esfex.readthedocs.io/">
     <img src="https://readthedocs.org/projects/esfex/badge/?version=latest" alt="Documentation">
@@ -33,8 +33,8 @@
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
   </a>
-  <a href="https://api.reuse.software/info/github.com/msotocalvo/ESFEX">
-    <img src="https://api.reuse.software/badge/github.com/msotocalvo/ESFEX" alt="REUSE status">
+  <a href="https://api.reuse.software/info/github.com/Net-Zero-Horizon/ESFEX">
+    <img src="https://api.reuse.software/badge/github.com/Net-Zero-Horizon/ESFEX" alt="REUSE status">
   </a>
   <a href="https://github.com/astral-sh/ruff">
     <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff">
@@ -42,8 +42,8 @@
   <a href="https://pypi.org/project/esfex/">
     <img src="https://img.shields.io/pypi/v/esfex.svg" alt="PyPI">
   </a>
-  <a href="https://github.com/msotocalvo/ESFEX/commits/main">
-    <img src="https://img.shields.io/github/last-commit/msotocalvo/ESFEX.svg" alt="Last commit">
+  <a href="https://github.com/Net-Zero-Horizon/ESFEX/commits/main">
+    <img src="https://img.shields.io/github/last-commit/Net-Zero-Horizon/ESFEX.svg" alt="Last commit">
   </a>
   <img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Status">
 </p>
@@ -174,7 +174,7 @@ esfex info
 ### From source (development mode)
 
 ```bash
-git clone https://github.com/msotocalvo/ESFEX.git
+git clone https://github.com/Net-Zero-Horizon/ESFEX.git
 cd ESFEX
 pip install -e .
 ```
@@ -347,7 +347,7 @@ If you use ESFEX in academic work, please cite:
   title   = {ESFEX: Energy System FlEXibility — Power System Optimization},
   author  = {Soto Calvo, Manuel and Lee, Han Soo},
   year    = {2026},
-  url     = {https://github.com/msotocalvo/ESFEX},
+  url     = {https://github.com/Net-Zero-Horizon/ESFEX},
   version = {0.1.0},
   license = {Apache-2.0}
 }

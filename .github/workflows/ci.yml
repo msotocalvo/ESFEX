@@ -83,7 +83,7 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
-          slug: msotocalvo/ESFEX
+          slug: Net-Zero-Horizon/ESFEX
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
         continue-on-error: true
@@ -115,7 +115,7 @@ jobs:
   # Publish to PyPI on a published GitHub release, via Trusted          #
   # Publishing (OIDC) — no API token stored in the repository.         #
   # Requires a "pending publisher" configured on PyPI:                  #
-  #   owner: msotocalvo · repo: ESFEX · workflow: ci.yml · env: pypi    #
+  #   owner: Net-Zero-Horizon · repo: ESFEX · workflow: ci.yml · env: pypi    #
   # ------------------------------------------------------------------ #
   publish:
     name: Publish to PyPI

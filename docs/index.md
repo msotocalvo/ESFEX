@@ -201,7 +201,7 @@ If you use ESFEX in academic work, please cite:
   title   = {ESFEX: Energy System FlEXibility — Power System Optimization},
   author  = {Soto Calvo, Manuel & Han Soo, Lee},
   year    = {2026},
-  url     = {https://github.com/msotocalvo/ESFEX},
+  url     = {https://github.com/Net-Zero-Horizon/ESFEX},
   license = {Apache-2.0},
   version = {0.1.0}
 }

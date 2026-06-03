@@ -3,8 +3,8 @@ site_description: >-
   Hybrid Python/Julia power system optimization model for
   capacity expansion planning and operational dispatch.
 site_url: https://esfex.readthedocs.io/
-repo_url: https://github.com/msotocalvo/ESFEX
-repo_name: msotocalvo/ESFEX
+repo_url: https://github.com/Net-Zero-Horizon/ESFEX
+repo_name: Net-Zero-Horizon/ESFEX
 
 copyright: Copyright &copy; 2025-2026 Manuel. Apache License 2.0.
 
@@ -85,7 +85,7 @@ extra_css:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/msotocalvo/ESFEX
+      link: https://github.com/Net-Zero-Horizon/ESFEX
 
 nav:
   - Home: index.md
