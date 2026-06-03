@@ -9,7 +9,8 @@ description = "ESFEX: Energy System FlEXibility — Power System Optimization"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Manuel", email = "manuel@example.com"}
+    {name = "Manuel Soto Calvo", email = "manuel.sotocalvo@gmail.com"},
+    {name = "Han Soo Lee"},
 ]
 requires-python = ">=3.10"
 classifiers = [
