@@ -50,3 +50,12 @@ gurobi.log
 .coverage
 .coverage.*
 coverage.xml
+
+# ── Julia ──
+# Ship Project.toml only; the Manifest is resolved per Julia version.
+# A manifest pinned to one Julia release breaks buildpkg on another
+# (e.g. "Could not locate the source code for OpenSSL_jll").
+Manifest.toml
+# Coverage tracefiles emitted by `Pkg.test(coverage=true)`.
+*.cov
+lcov.info
