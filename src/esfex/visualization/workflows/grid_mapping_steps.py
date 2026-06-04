@@ -4560,8 +4560,8 @@ class GridMappingDemandStep(QWidget):
             node_residential_fraction=[0.40] * num_nodes,
             node_commercial_fraction=[0.35] * num_nodes,
             node_industrial_fraction=[0.25] * num_nodes,
-            node_lats=[n.latitude for n in nodes],
-            node_lons=[n.longitude for n in nodes],
+            node_lats=[n.centroid_lat for n in nodes],
+            node_lons=[n.centroid_lng for n in nodes],
             node_names=[n.name for n in nodes],
         )
 

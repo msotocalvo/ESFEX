@@ -5054,8 +5054,8 @@ class MainWindow(QMainWindow):
                     clone.name = self._unique_name(orig.name, names)
                     clone.coordinate = deepcopy(orig.coordinate)
                     if clone.coordinate:
-                        clone.coordinate.latitude += 0.03
-                        clone.coordinate.longitude += 0.03
+                        clone.coordinate.lat += 0.03
+                        clone.coordinate.lng += 0.03
                     clone.node = 0
                     state.fuel_entry_points.append(clone)
                     self.model.stateLoaded.emit()
