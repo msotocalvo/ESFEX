@@ -134,25 +134,25 @@ ESFEX treats sector coupling as a first-class architectural principle. Any energ
 
 | Feature | ESFEX | PyPSA | GenX | Calliope | TIMES | OSeMOSYS |
 |---------|:-----:|:-----:|:----:|:--------:|:-----:|:--------:|
-| Capacity expansion | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Operational dispatch (hourly) | ✅ | ✅ | ✅ | ✅ | Time slices | Time slices |
-| Two-stage decomposition | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Rolling horizon dispatch | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
-| DC power flow (KCL/KVL) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| AC optimal power flow | ✅ | ⚠️* | ❌ | ❌ | ❌ | ❌ |
-| Battery cyclic SOC | ✅ | ✅ | ✅ | ✅ | Simplified | Simplified |
-| EV fleet modeling (V2G) | ✅ | Limited | ❌ | ❌ | ✅ | ❌ |
-| Primary energy supply chain | ✅ | Limited | ❌ | Limited | ✅ | Partial |
-| Electrolyzer / P2H₂ | ✅ | ✅ | ✅ | ✅ | ✅ | Limited |
-| Stochastic programming | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| N-1 security constraints | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| MGA / near-optimal | MGA + SPORES | MGA | MGA | SPORES | ❌ | ❌ |
-| Sobol sensitivity | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| GIS-based Studio | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Plugin / extension system | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Capacity expansion | ● | ● | ● | ● | ● | ● |
+| Operational dispatch (hourly) | ● | ● | ● | ● | Time slices | Time slices |
+| Two-stage decomposition | ● | ○ | ○ | ○ | ○ | ○ |
+| Rolling horizon dispatch | ● | ● | ○ | ● | ○ | ○ |
+| DC power flow (KCL/KVL) | ● | ● | ○ | ○ | ○ | ○ |
+| AC optimal power flow | ● | ◐* | ○ | ○ | ○ | ○ |
+| Battery cyclic SOC | ● | ● | ● | ● | Simplified | Simplified |
+| EV fleet modeling (V2G) | ● | Limited | ○ | ○ | ● | ○ |
+| Primary energy supply chain | ● | Limited | ○ | Limited | ● | Partial |
+| Electrolyzer / P2H₂ | ● | ● | ● | ● | ● | Limited |
+| Stochastic programming | ● | ● | ○ | ○ | ● | ○ |
+| N-1 security constraints | ● | ● | ○ | ○ | ○ | ○ |
+| MGA / near-optimal | MGA + SPORES | MGA | MGA | SPORES | ○ | ○ |
+| Sobol sensitivity | ● | ○ | ○ | ○ | ○ | ○ |
+| GIS-based Studio | ● | ○ | ○ | ○ | ○ | ○ |
+| Plugin / extension system | ● | ○ | ○ | ○ | ○ | ○ |
 | Solver backend | JuMP | Linopy | JuMP | Pyomo | GAMS | GLPK/CBC |
 
-<sub>*PyPSA performs an AC power flow via Newton-Raphson, not a full ACOPF. See [`docs/index.md`](docs/index.md) for the extended comparison and citations.</sub>
+<sub>● full support · ◐ partial · ○ not supported. *PyPSA performs an AC power flow via Newton-Raphson, not a full ACOPF. See [`docs/index.md`](docs/index.md) for the extended comparison and citations.</sub>
 
 ---
 
