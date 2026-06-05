@@ -170,6 +170,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic V
 
 ---
 
+## [0.1.3] --- 2026-06-05
+
+### Added
+
+- **Benders decomposition** as an optional master-problem solver
+  (`master_problem.solver_method: monolithic | benders`). The investment-only
+  master with `θ[y]` recourse variables plus per-representative-day dispatch
+  subproblems and optimality cuts is beneficial for very large problems.
+  Configurable via `benders_max_iterations`, `benders_tolerance`,
+  `benders_lol_penalty_cap`, and selectable from the Studio's master-problem
+  settings. Monolithic remains the default.
+- **OpenSSF Best Practices** badge.
+
+### Fixed
+
+- **Grid Builder bus-distribution step no longer freezes the UI** on
+  whole-country footprint sets: building-footprint classification and the
+  nearest-bus assignment run in a background thread, with a vectorised
+  classifier, single centroid pass, and `np.bincount` accumulation.
+
+---
+
 ## [0.1.1] --- 2026-06-04
 
 ### Fixed

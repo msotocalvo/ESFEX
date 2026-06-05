@@ -181,7 +181,7 @@ for year in results:
 
 | Property | Value |
 |----------|-------|
-| Current version | 0.1.1 (alpha) |
+| Current version | 0.1.3 (alpha) |
 | Python support | 3.10, 3.11, 3.12 |
 | Julia support | 1.9+ (via juliacall) |
 | Default solver | HiGHS (open-source LP/MIP) |
@@ -203,7 +203,7 @@ If you use ESFEX in academic work, please cite:
   year    = {2026},
   url     = {https://github.com/Net-Zero-Horizon/ESFEX},
   license = {Apache-2.0},
-  version = {0.1.1}
+  version = {0.1.3}
 }
 ```
 

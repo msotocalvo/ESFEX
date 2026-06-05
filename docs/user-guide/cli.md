@@ -445,7 +445,7 @@ esfex info
 ### Example Output
 
 ```
-ESFEX version 0.1.1
+ESFEX version 0.1.3
 Python: 3.12.0 (main, Oct  2 2023, 12:00:00) [GCC 13.2.0]
 Julia: Available via juliacall
 
@@ -458,7 +458,7 @@ Available solvers (Julia/JuMP):
 If Julia is not installed or `juliacall` is not available:
 
 ```
-ESFEX version 0.1.1
+ESFEX version 0.1.3
 Python: 3.12.0
 Julia: Not available (juliacall not installed)
 
