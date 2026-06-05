@@ -2124,6 +2124,10 @@ struct MasterProblemInput
     gen_cost_curves::Dict{Int, Dict{Int, Vector{CostSegment}}}
     tech_cost_curves::Dict{Int, Dict{Int, Vector{CostSegment}}}
     bat_cost_curves::Dict{Int, Dict{Int, Vector{CostSegment}}}
+
+    # Loss-of-load penalty cap ($/MW per timestep) applied inside Benders
+    # subproblems for numerical stability. Ignored by the monolithic solver.
+    benders_lol_penalty_cap::Float64
 end
 
 # Constructor with defaults
@@ -2197,7 +2201,8 @@ function MasterProblemInput(;
     solver_options::Dict{String, Any} = Dict{String, Any}(),
     gen_cost_curves::Dict{Int, Dict{Int, Vector{CostSegment}}} = Dict{Int, Dict{Int, Vector{CostSegment}}}(),
     tech_cost_curves::Dict{Int, Dict{Int, Vector{CostSegment}}} = Dict{Int, Dict{Int, Vector{CostSegment}}}(),
-    bat_cost_curves::Dict{Int, Dict{Int, Vector{CostSegment}}} = Dict{Int, Dict{Int, Vector{CostSegment}}}()
+    bat_cost_curves::Dict{Int, Dict{Int, Vector{CostSegment}}} = Dict{Int, Dict{Int, Vector{CostSegment}}}(),
+    benders_lol_penalty_cap::Float64 = 1000.0
 )
     return MasterProblemInput(
         years, base_year,
@@ -2229,7 +2234,8 @@ function MasterProblemInput(;
         transmission_lines, transmission_reactances, transmission_capacities,
         transmission_resistances, transmission_loss_segments,
         solver_name, threads, time_limit, gap, verbose, solver_options,
-        gen_cost_curves, tech_cost_curves, bat_cost_curves
+        gen_cost_curves, tech_cost_curves, bat_cost_curves,
+        benders_lol_penalty_cap
     )
 end
 
@@ -2362,6 +2368,30 @@ struct MasterProblemResult
 
     # Reservoir capacity investment: year => gen => nodes (MWh)
     reservoir_investment::Dict{Int, Dict{Int, Vector{Float64}}}
+end
+
+"""
+    BendersResult
+
+Output of the Benders decomposition solver for the master problem.
+
+# Fields
+- `solution`: the recovered `MasterProblemResult`
+- `objective`: best upper bound found (total NPV cost, \$)
+- `iterations`: number of Benders iterations performed
+- `gap`: final relative optimality gap (UB - LB) / |UB|
+- `lb_history`: lower bound per iteration (master objective)
+- `ub_history`: upper bound per iteration (investment + subproblem cost)
+- `solve_time`: total wall-clock time (seconds)
+"""
+struct BendersResult
+    solution::MasterProblemResult
+    objective::Float64
+    iterations::Int
+    gap::Float64
+    lb_history::Vector{Float64}
+    ub_history::Vector{Float64}
+    solve_time::Float64
 end
 
 # =============================================================================

@@ -96,6 +96,7 @@ include("transmission_acopf.jl")
 include("power_system.jl")
 include("primary_energy.jl")
 include("master_problem.jl")
+include("benders.jl")
 include("mga.jl")
 include("electrolyzer.jl")
 include("dcopf_benchmark.jl")
@@ -172,6 +173,10 @@ export add_retirement_cascade_constraints!, add_re_target_constraints!
 export add_re_increment_constraints!
 export add_capacity_adequacy_constraints!, add_transmission_symmetry_constraints!
 export build_master_objective!, extract_master_solution
+
+# Benders decomposition (optional master-problem solver)
+export BendersResult, run_benders_decomposition
+export extract_master_solution_from_benders
 export calculate_target_ratios, select_representative_days
 export build_cumulative_capacity_expressions
 
