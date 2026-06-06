@@ -938,7 +938,7 @@
     "mp_use_tsam": "Enable TSAM Clustering",
     "mp_tsam_num_periods": "TSAM Periods:",
     "mp_tsam_method": "Clustering Method:",
-    "mp_tsam_inter_period_linking": "Inter-Period SOC Linking",
+    "mp_tsam_inter_period_linking": "Inter-Period Storage Linking (Battery + Hydro)",
     "mp_solver_method": "Solver Method:",
     "mp_solver_monolithic": "Monolithic (full model)",
     "mp_solver_benders": "Benders Decomposition",

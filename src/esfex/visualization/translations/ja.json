@@ -938,7 +938,7 @@
     "mp_use_tsam": "TSAMクラスタリングを有効化",
     "mp_tsam_num_periods": "TSAM期間数:",
     "mp_tsam_method": "クラスタリング手法:",
-    "mp_tsam_inter_period_linking": "期間間SOCリンク",
+    "mp_tsam_inter_period_linking": "期間間ストレージリンク（バッテリー＋水力）",
     "mp_solver_method": "解法:",
     "mp_solver_monolithic": "モノリシック（完全モデル）",
     "mp_solver_benders": "ベンダーズ分解",
