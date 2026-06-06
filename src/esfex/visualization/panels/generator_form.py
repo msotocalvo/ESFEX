@@ -289,6 +289,9 @@ class GeneratorForm(QWidget):
         self._reservoir_invest_max = self._dbl_spin(0, 1e6, 3)
         fl_res.addRow(tr("generator_form.reservoir_invest_max"), self._reservoir_invest_max)
 
+        self._reservoir_min_release = self._dbl_spin(0, 1e6, 3)
+        fl_res.addRow(tr("generator_form.reservoir_min_release"), self._reservoir_min_release)
+
         self._reservoir_group.setVisible(False)
         layout.addWidget(self._reservoir_group)
 
@@ -411,6 +414,8 @@ class GeneratorForm(QWidget):
         self._reservoir_spillage_allowed.setChecked(inst.reservoir_spillage_allowed)
         self._reservoir_invest_cost.setValue(inst.reservoir_invest_cost)
         self._reservoir_invest_max.setValue(inst.reservoir_invest_max)
+        self._reservoir_min_release.setValue(
+            getattr(inst, "reservoir_min_release", 0.0))
         self._reservoir_group.setVisible(inst.reservoir_capacity > 0)
 
         # Set default color based on generator type before loading style
@@ -485,6 +490,7 @@ class GeneratorForm(QWidget):
             ("reservoir_pump_efficiency", self._reservoir_pump_efficiency),
             ("reservoir_invest_cost", self._reservoir_invest_cost),
             ("reservoir_invest_max", self._reservoir_invest_max),
+            ("reservoir_min_release", self._reservoir_min_release),
         ]
 
     # ------------------------------------------------------------------

@@ -329,6 +329,7 @@
     "reservoir_spillage_allowed": "Allow Spillage",
     "reservoir_invest_cost": "Reservoir Invest Cost ($/MWh):",
     "reservoir_invest_max": "Max Reservoir Expansion (MWh):",
+    "reservoir_min_release": "Min Environmental Flow (MW):",
     "curve_type": "Cost Curve:",
     "price_at_zero": "Price at 0% ($/MWh):",
     "price_at_max": "Price at 100% ($/MWh):",

@@ -183,6 +183,7 @@ class GuiGeneratorInstance:
     reservoir_spillage_allowed: bool = True
     reservoir_invest_cost: float = 0.0        # $/MWh
     reservoir_invest_max: float = 0.0         # MWh
+    reservoir_min_release: float = 0.0        # MW-eq, mandatory minimum / ecological flow
     # Bidding/offer curve for fuel cost
     fuel_cost_curve_type: str = "flat"        # flat, linear, stepwise, exponential
     fuel_cost_curve_data: Optional[dict] = None

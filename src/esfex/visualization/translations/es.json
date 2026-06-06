@@ -329,6 +329,7 @@
     "reservoir_spillage_allowed": "Permitir Vertimiento",
     "reservoir_invest_cost": "Costo Inversión Embalse ($/MWh):",
     "reservoir_invest_max": "Expansión Máxima Embalse (MWh):",
+    "reservoir_min_release": "Caudal Mínimo Ambiental (MW):",
     "curve_type": "Curva de Costo:",
     "price_at_zero": "Precio al 0% ($/MWh):",
     "price_at_max": "Precio al 100% ($/MWh):",

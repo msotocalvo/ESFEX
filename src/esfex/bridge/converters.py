@@ -1137,6 +1137,11 @@ def convert_generator_config(
             prop(getattr(gen, 'risk_coefficient', [1.0]))
             if bus_to_node else getattr(gen, 'risk_coefficient', [1.0])
         ),
+        py_to_julia_vector(
+            prop(getattr(gen, 'reservoir_min_release', None) or [0.0])
+            if bus_to_node
+            else (getattr(gen, 'reservoir_min_release', None) or [0.0])
+        ),
     )
 
 

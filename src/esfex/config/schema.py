@@ -616,6 +616,10 @@ class GeneratorConfig(BaseModel):
     reservoir_spillage_allowed: bool = Field(True, description="Allow reservoir spillage")
     reservoir_invest_cost: list[float] = Field(default_factory=list, description="Reservoir invest cost ($/MWh)")
     reservoir_invest_max: list[float] = Field(default_factory=list, description="Max reservoir expansion (MWh)")
+    reservoir_min_release: list[float] = Field(
+        default_factory=list,
+        description="Mandatory minimum reservoir release per node (MW-eq) — "
+        "ecological / minimum environmental flow. 0 = none.")
 
     risk_coefficient: list[float] = Field(
         default_factory=lambda: [1.0],

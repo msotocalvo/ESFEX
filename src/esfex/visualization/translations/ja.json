@@ -329,6 +329,7 @@
     "reservoir_spillage_allowed": "放水を許可",
     "reservoir_invest_cost": "貯水池投資コスト ($/MWh):",
     "reservoir_invest_max": "最大貯水池拡張 (MWh):",
+    "reservoir_min_release": "最小環境流量 (MW):",
     "curve_type": "コスト曲線:",
     "price_at_zero": "0%時価格 ($/MWh):",
     "price_at_max": "100%時価格 ($/MWh):",
