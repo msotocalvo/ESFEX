@@ -490,6 +490,67 @@ import Ipopt
             @test sum(r1.reservoir_spillage) > spill0 + 1.0
         end
 
+        @testset "hydraulic cascade feeds downstream reservoir" begin
+            # Two reservoirs in series on a single bus. "Up" has inflow and is
+            # forced (min_release) to pass 40 MW-eq of water each hour; its low
+            # turbine cap means most of that leaves as spill. "Down" has no
+            # inflow of its own — only the cascade can give it water. With the
+            # link Down generates and displaces the expensive gas; without it
+            # Down stays dry.
+            H = 4
+            # 42-field reservoir generator with a cascade target.
+            mkres(name, rated, init_frac, inflow_mw, minrel, downstream) =
+                GeneratorConfig(
+                    name, "Renewable", "Water", [rated], [0.0],
+                    [1.0], [1.0], [100.0], [100.0], [0.0], [0.0], [0.0],
+                    [0.0], [0.0], [0.0], [0.0], [0.0], [0.0], ones(H, 1), true,
+                    [60.0], [0.0], [0.0], [0.0], 50.0, "AC",
+                    [1000.0], [init_frac], [0.0], [1.0], fill(inflow_mw, H, 1),
+                    [1.0], [0.0], [0.0], [1.0], true, [0.0], [0.0], [0.0],
+                    [minrel], downstream, 0,
+                )
+            gas = mkgen("Gas", "Non-renewable", "Gas", [200.0],
+                        [1.0], ones(H, 1); nb = 1, H = H)  # expensive backup
+            bus = BusData(1, 1, 220.0, 50.0, "AC", "slack", "mixed", 1.0)
+            net = NetworkConfig(1, 1, [bus], [1], zeros(1, 1), zeros(1, 1),
+                                100.0, 0.4, 220.0, 0.5, 1, [0.0], [0.0],
+                                TransmissionLineData[], TransformerData[],
+                                ACDCConverterData[], FrequencyConverterData[], 0.1)
+            demand = reshape(fill(50.0, H), H, 1)
+            mkinput(up, down) = PowerSystemInput(
+                name = "casc", year = 2025, network = net,
+                generators = [up, down, gas],
+                batteries = BatteryConfig[], demand = demand,
+                temporal = TemporalConfig(H, 1, H, 0, H, H, 1, 1, 1),
+                mode = "economic_dispatch", solver_name = "highs", verbose = false)
+
+            down = mkres("Down", 100.0, 0.0, 0.0, 0.0, "")  # dry, terminal
+            # Up passes 40 MW-eq/h (turbine cap 10 -> ~30 spilled), inflow 40 keeps
+            # it water-balanced over the cyclic period.
+            up_linked = mkres("Up", 10.0, 0.5, 40.0, 40.0, "Down")
+            up_isolated = mkres("Up", 10.0, 0.5, 40.0, 40.0, "")
+
+            mc, vc = create_power_system(mkinput(up_linked, down))
+            optimize!(mc)
+            @test string(termination_status(mc)) == "OPTIMAL"
+            rc = extract_solution(mc, vc, mkinput(up_linked, down))
+            down_gen_linked = sum(rc.gen_output[2, 1, :])
+
+            mi, vi = create_power_system(mkinput(up_isolated, down))
+            optimize!(mi)
+            @test string(termination_status(mi)) == "OPTIMAL"
+            ri = extract_solution(mi, vi, mkinput(up_isolated, down))
+            down_gen_isolated = sum(ri.gen_output[2, 1, :])
+
+            # The cascade is the only water source for Down: it generates with
+            # the link and is essentially idle without it.
+            @test down_gen_linked > 100.0
+            @test down_gen_isolated < 1.0
+            # Letting Down run on cascade water serves load that is otherwise
+            # unmet/expensive -> the linked case is strictly cheaper.
+            @test rc.objective < ri.objective - 0.5
+        end
+
         @testset "two-bus transmission + renewable + battery" begin
             H = 2; N = 2
             gas  = mkgen("GasCC", "Non-renewable", "Gas", [100.0, 0.0],

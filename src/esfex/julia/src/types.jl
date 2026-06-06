@@ -391,11 +391,21 @@ struct GeneratorConfig
     # environmental flow. Default 0 is neutral. (Minimum stable generation is
     # already handled by the existing `min_power` field.)
     reservoir_min_release::Vector{Float64}
+    # Hydraulic cascade. Water released by this reservoir (turbined + spilled)
+    # becomes inflow to the reservoir named `cascade_downstream` after
+    # `cascade_delay_hours` of travel time. Empty name = terminal reservoir
+    # (its release leaves the modelled system). Plant-level (scalar), since the
+    # cascade topology links whole hydro plants, not individual nodes.
+    cascade_downstream::String
+    cascade_delay_hours::Int
 end
 
-# Backward-compatible constructor: existing 39-argument call sites keep working;
-# the reservoir_min_release field defaults to neutral zeros sized to the per-node
-# vectors. New code passes all 40 arguments to set it.
+# Backward-compatible constructors. The struct grew over time, so older call
+# sites pass fewer positional arguments and the newer fields take neutral
+# defaults: reservoir_min_release = zeros, cascade_downstream = "" (terminal),
+# cascade_delay_hours = 0. Dispatch is by argument count (39 / 40 / full 42).
+
+# 39-arg: through risk_coefficient.
 function GeneratorConfig(
     name, type, fuel, rated_power, min_power, efficiency_rated, efficiency_min,
     ramp_up, ramp_down, min_up_time, min_down_time, start_up_cost, fuel_cost,
@@ -418,7 +428,34 @@ function GeneratorConfig(
         reservoir_turbine_efficiency, reservoir_evaporation_rate,
         reservoir_pump_capacity, reservoir_pump_efficiency, reservoir_spillage_allowed,
         reservoir_invest_cost, reservoir_invest_max, risk_coefficient,
-        zeros(Float64, n),  # reservoir_min_release
+        zeros(Float64, n), "", 0,  # min_release, cascade_downstream, cascade_delay_hours
+    )
+end
+
+# 40-arg: through reservoir_min_release (cascade defaults to none).
+function GeneratorConfig(
+    name, type, fuel, rated_power, min_power, efficiency_rated, efficiency_min,
+    ramp_up, ramp_down, min_up_time, min_down_time, start_up_cost, fuel_cost,
+    fixed_cost, maintenance_cost, inertia, invest_cost, invest_max, availability,
+    reservable, life_time, initial_age, degradation_rate, decommissioning_cost,
+    frequency_hz, current_type, reservoir_capacity, reservoir_initial_level,
+    reservoir_min_level, reservoir_max_level, reservoir_inflow,
+    reservoir_turbine_efficiency, reservoir_evaporation_rate,
+    reservoir_pump_capacity, reservoir_pump_efficiency, reservoir_spillage_allowed,
+    reservoir_invest_cost, reservoir_invest_max, risk_coefficient,
+    reservoir_min_release,
+)
+    return GeneratorConfig(
+        name, type, fuel, rated_power, min_power, efficiency_rated, efficiency_min,
+        ramp_up, ramp_down, min_up_time, min_down_time, start_up_cost, fuel_cost,
+        fixed_cost, maintenance_cost, inertia, invest_cost, invest_max, availability,
+        reservable, life_time, initial_age, degradation_rate, decommissioning_cost,
+        frequency_hz, current_type, reservoir_capacity, reservoir_initial_level,
+        reservoir_min_level, reservoir_max_level, reservoir_inflow,
+        reservoir_turbine_efficiency, reservoir_evaporation_rate,
+        reservoir_pump_capacity, reservoir_pump_efficiency, reservoir_spillage_allowed,
+        reservoir_invest_cost, reservoir_invest_max, risk_coefficient,
+        reservoir_min_release, "", 0,  # cascade_downstream, cascade_delay_hours
     )
 end
 

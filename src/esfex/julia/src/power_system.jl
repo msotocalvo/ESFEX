@@ -1992,6 +1992,38 @@ function add_reservoir_constraints!(model, vars::PowerSystemVariables, input;
     hours = input.temporal.hours
     is_dev = vars.reservoir_invest_capacity !== nothing
 
+    # --- Hydraulic cascade topology ---------------------------------------
+    # Resolve each reservoir's `cascade_downstream` name to a generator index
+    # and record, per downstream reservoir, which upstream units feed it and
+    # with what travel delay. The released water (turbined + spilled, summed
+    # over the upstream's reservoir nodes) is injected into the downstream
+    # reservoir's primary node. cascade_feeders[gd] = [(gu, delay), ...].
+    name_to_gen = Dict{String, Int}()
+    for g in 1:n_gen
+        name_to_gen[input.generators[g].name] = g
+    end
+    primary_res_bus = Dict{Int, Int}()
+    for g in 1:n_gen
+        for b in vars.buses_of_gen[g]
+            if input.generators[g].reservoir_capacity[b] > 0
+                primary_res_bus[g] = b
+                break
+            end
+        end
+    end
+    cascade_feeders = Dict{Int, Vector{Tuple{Int,Int}}}()
+    for gu in 1:n_gen
+        genu = input.generators[gu]
+        isempty(genu.cascade_downstream) && continue
+        gd = get(name_to_gen, genu.cascade_downstream, 0)
+        gd == 0 && continue
+        # Both ends must actually be reservoirs to form a water link.
+        (haskey(primary_res_bus, gu) && haskey(primary_res_bus, gd)) || continue
+        gd == gu && continue  # guard against a self-referential loop
+        push!(get!(cascade_feeders, gd, Tuple{Int,Int}[]),
+              (gu, max(0, genu.cascade_delay_hours)))
+    end
+
     for g in 1:n_gen
         gen = input.generators[g]
 
@@ -2089,12 +2121,36 @@ function add_reservoir_constraints!(model, vars::PowerSystemVariables, input;
                     AffExpr(0.0)
                 end
 
+                # Cascade inflow: water released by upstream reservoirs that
+                # feed this one arrives (turbined + spilled) after their travel
+                # delay. Only injected at the downstream reservoir's primary
+                # node. Releases scheduled before the period start (t-delay < 1)
+                # are outside this window and not carried in (a small edge
+                # approximation; inter-period in-transit water is not tracked).
+                cascade_in = AffExpr(0.0)
+                if get(primary_res_bus, g, 0) == b && haskey(cascade_feeders, g)
+                    for (gu, delay) in cascade_feeders[g]
+                        τ = t - delay
+                        τ >= 1 || continue
+                        genu = input.generators[gu]
+                        for bu in vars.buses_of_gen[gu]
+                            genu.reservoir_capacity[bu] > 0 || continue
+                            η_u = genu.reservoir_turbine_efficiency[bu]
+                            add_to_expression!(cascade_in,
+                                vars.gen_output[gu, bu, τ] / η_u)
+                            add_to_expression!(cascade_in,
+                                vars.reservoir_spillage[gu, bu, τ])
+                        end
+                    end
+                end
+
                 # Water level dynamics:
-                # level[t+1] = level[t] * (1 - evap) + inflow - output/η_turbine + pump*η_pump - spillage
+                # level[t+1] = level[t] * (1 - evap) + inflow + cascade - output/η_turbine + pump*η_pump - spillage
                 @constraint(model,
                     vars.reservoir_level[g, b, t+1] ==
                     vars.reservoir_level[g, b, t] * (1 - evap_rate) +
-                    inflow_t -
+                    inflow_t +
+                    cascade_in -
                     vars.gen_output[g, b, t] / η_turbine +
                     pump_term -
                     spillage_term,
