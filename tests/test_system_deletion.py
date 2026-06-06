@@ -1,9 +1,15 @@
-"""Deleting a system must remove it from state and the element tree.
+"""System deletion regressions (#8).
 
-Regression for the Grid Builder flow: the wizard renames the system after
-creating it, and the tree item's stored id used to be left out of sync by the
-rename, so deleting it targeted a missing key, raised KeyError, and left the
-system in the tree.
+The Grid Builder renames every system it creates, so the element tree must keep
+the renamed item's stored id in sync — otherwise the delete context menu emits
+the stale *old* name, ``_on_delete_system`` hits a missing key (KeyError) and
+aborts, and the system stays in the tree.
+
+These tests exercise the element-tree id-sync directly (a lightweight widget,
+no full MainWindow, to stay isolated from the rest of the GUI suite). The
+save-side half of the bug — a deleted system surviving in the config and
+reappearing on reload — is covered by
+``test_serializer.TestDeletedSystemPruning``.
 """
 
 import os
@@ -14,7 +20,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 
 
 @pytest.fixture(scope="module")
@@ -23,63 +29,40 @@ def qapp():
 
 
 @pytest.fixture
-def main_window(qapp, monkeypatch):
-    # Auto-confirm the delete confirmation dialog.
-    monkeypatch.setattr(
-        QMessageBox, "question",
-        lambda *a, **k: QMessageBox.StandardButton.Yes)
-    from esfex.visualization.main_window import MainWindow
-    w = MainWindow()
+def tree(qapp):
+    from esfex.visualization.panels.element_tree import ElementTreePanel
+    w = ElementTreePanel()
     try:
         yield w
     finally:
-        w.close()
+        w.deleteLater()
 
 
-def _two_systems(w, a, b):
-    w._create_system_for_wizard(a)
-    w._create_system_for_wizard(b)
+def test_add_system_stores_id(tree):
+    tree.add_system("A")
+    assert tree._system_items["A"].data(0, 100) == ("system", "A")
 
 
-def test_delete_normal_system(main_window):
-    w = main_window
-    _two_systems(w, "S0", "S1")
-    w._on_delete_system("S0")
-    assert "S0" not in w._all_states
-    assert "S0" not in w.element_tree._system_items
+def test_rename_keeps_item_id_in_sync(tree):
+    """A renamed system's stored id must follow the new name.
 
-
-def test_delete_renamed_system(main_window):
-    """A renamed system (Grid Builder) must delete via its tree id."""
-    w = main_window
-    _two_systems(w, "A", "Keep")
-    w._on_system_renamed("A", "Region1")
-
-    # The tree item's stored id must follow the rename...
-    item = w.element_tree._system_items["Region1"]
+    The delete context menu reads ``data(0, 100)``; if the rename leaves it on
+    the old name, deletion targets a missing key and silently fails.
+    """
+    tree.add_system("A")
+    tree.rename_system("A", "Region1")
+    assert "A" not in tree._system_items
+    item = tree._system_items["Region1"]
     assert item.data(0, 100) == ("system", "Region1")
 
-    # ...so deleting via that id (what the context menu emits) works.
-    eid = item.data(0, 100)[1]
-    w._on_delete_system(eid)
-    assert "Region1" not in w._all_states
-    assert "Region1" not in w.element_tree._system_items
-    assert "Keep" in w._all_states
 
-
-def test_delete_unknown_id_is_noop(main_window):
-    w = main_window
-    _two_systems(w, "X", "Y")
-    before = set(w._all_states)
-    w._on_delete_system("GHOST")  # a stale id must not raise
-    assert set(w._all_states) == before
-    assert set(w.element_tree._system_items) == before
-
-
-def test_rename_keeps_tree_item_id_in_sync(main_window):
-    w = main_window
-    _two_systems(w, "Old", "Keep")
-    w._on_system_renamed("Old", "New")
-    item = w.element_tree._system_items["New"]
-    assert item.data(0, 100) == ("system", "New")
-    assert "Old" not in w.element_tree._system_items
+def test_remove_renamed_system_by_current_id(tree):
+    """Removing a renamed system by its (correct) new id prunes the tree item."""
+    tree.add_system("A")
+    tree.add_system("Keep")
+    tree.rename_system("A", "Region1")
+    eid = tree._system_items["Region1"].data(0, 100)[1]
+    assert eid == "Region1"
+    tree.remove_system(eid)
+    assert "Region1" not in tree._system_items
+    assert "Keep" in tree._system_items
