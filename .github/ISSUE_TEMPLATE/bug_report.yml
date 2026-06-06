@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a defect so it can be reproduced and fixed.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please do **not** report
+        security vulnerabilities here — follow the
+        [Security Policy](https://github.com/Net-Zero-Horizon/ESFEX/blob/main/SECURITY.md)
+        instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps (and a minimal configuration, if relevant) to reproduce the problem.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ESFEX version
+      description: 'Output of `python -c "import esfex; print(esfex.__version__)"`, or the release tag.'
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Julia version, and how you installed ESFEX (pip / conda / source).
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / traceback
+      description: Relevant error output. This is rendered as code, so no backticks are needed.
+      render: shell
+    validations:
+      required: false

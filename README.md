@@ -363,7 +363,7 @@ If you use ESFEX in academic work, please cite:
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the requirements for acceptable contributions (coding standard, tests, and the pull-request process), with [Development Setup](docs/contributing/development-setup.md) for the development environment and [Testing](docs/contributing/testing.md) for the test workflow. Bug reports and feature requests go to the GitHub issue tracker.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the requirements for acceptable contributions (coding standard, tests, and the pull-request process), with [Development Setup](docs/contributing/development-setup.md) for the development environment and [Testing](docs/contributing/testing.md) for the test workflow. Bug reports and feature requests go to the [GitHub issue tracker](https://github.com/Net-Zero-Horizon/ESFEX/issues).
 
 ---
 
