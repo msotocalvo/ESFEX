@@ -59,3 +59,7 @@ Manifest.toml
 # Coverage tracefiles emitted by `Pkg.test(coverage=true)`.
 *.cov
 lcov.info
+
+# ── MkDocs ──
+# Generated documentation site (mkdocs build output).
+site/
