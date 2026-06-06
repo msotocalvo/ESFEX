@@ -123,6 +123,7 @@ _GEN_RESERVOIR_FIELDS = [
     "reservoir_pump_capacity", "reservoir_pump_efficiency",
     "reservoir_invest_cost", "reservoir_invest_max",
     "reservoir_min_release",
+    "reservoir_head_min_factor",
 ]
 
 _GEN_SCALAR_FIELDS = _GEN_SCALAR_FIELDS_BASE + _GEN_RESERVOIR_FIELDS

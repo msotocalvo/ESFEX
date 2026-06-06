@@ -292,6 +292,11 @@ class GeneratorForm(QWidget):
         self._reservoir_min_release = self._dbl_spin(0, 1e6, 3)
         fl_res.addRow(tr("generator_form.reservoir_min_release"), self._reservoir_min_release)
 
+        # Head dependence: power-availability factor at the minimum level
+        # (1.0 = no head effect).
+        self._reservoir_head_min_factor = self._dbl_spin(0, 1, 3)
+        fl_res.addRow(tr("generator_form.reservoir_head_min_factor"), self._reservoir_head_min_factor)
+
         # Hydraulic cascade: this reservoir discharges into another one. The
         # combo is populated with the other reservoir generators at load time.
         self._cascade_downstream = QComboBox()
@@ -428,6 +433,8 @@ class GeneratorForm(QWidget):
         self._reservoir_invest_max.setValue(inst.reservoir_invest_max)
         self._reservoir_min_release.setValue(
             getattr(inst, "reservoir_min_release", 0.0))
+        self._reservoir_head_min_factor.setValue(
+            getattr(inst, "reservoir_head_min_factor", 1.0))
         # Cascade: offer the other reservoir generators as downstream targets.
         self._cascade_downstream.blockSignals(True)
         self._cascade_downstream.clear()
@@ -517,6 +524,7 @@ class GeneratorForm(QWidget):
             ("reservoir_invest_cost", self._reservoir_invest_cost),
             ("reservoir_invest_max", self._reservoir_invest_max),
             ("reservoir_min_release", self._reservoir_min_release),
+            ("reservoir_head_min_factor", self._reservoir_head_min_factor),
             ("cascade_downstream", self._cascade_downstream),
             ("cascade_delay_hours", self._cascade_delay_hours),
         ]

@@ -330,6 +330,7 @@
     "reservoir_invest_cost": "Reservoir Invest Cost ($/MWh):",
     "reservoir_invest_max": "Max Reservoir Expansion (MWh):",
     "reservoir_min_release": "Min Environmental Flow (MW):",
+    "reservoir_head_min_factor": "Head Min. Power Factor (0-1):",
     "cascade_downstream": "Cascade Downstream Reservoir:",
     "cascade_delay_hours": "Cascade Travel Delay (h):",
     "curve_type": "Cost Curve:",

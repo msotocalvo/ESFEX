@@ -330,6 +330,7 @@
     "reservoir_invest_cost": "Costo Inversión Embalse ($/MWh):",
     "reservoir_invest_max": "Expansión Máxima Embalse (MWh):",
     "reservoir_min_release": "Caudal Mínimo Ambiental (MW):",
+    "reservoir_head_min_factor": "Factor Potencia Mín. por Altura (0-1):",
     "cascade_downstream": "Embalse Aguas Abajo (Cascada):",
     "cascade_delay_hours": "Retardo de Viaje (h):",
     "curve_type": "Curva de Costo:",

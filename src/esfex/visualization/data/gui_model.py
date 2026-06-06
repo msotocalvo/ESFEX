@@ -186,6 +186,7 @@ class GuiGeneratorInstance:
     reservoir_min_release: float = 0.0        # MW-eq, mandatory minimum / ecological flow
     cascade_downstream: str = ""              # downstream reservoir name (hydraulic cascade)
     cascade_delay_hours: int = 0              # water travel time to downstream (hours)
+    reservoir_head_min_factor: float = 1.0    # power-availability factor at min level (head dependence)
     # Bidding/offer curve for fuel cost
     fuel_cost_curve_type: str = "flat"        # flat, linear, stepwise, exponential
     fuel_cost_curve_data: Optional[dict] = None

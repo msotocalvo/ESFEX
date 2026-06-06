@@ -1936,6 +1936,7 @@ class TestReservoirRoundTrip:
         gen.reservoir_spillage_allowed = False
         gen.reservoir_invest_cost = [100000.0, 80000.0]
         gen.reservoir_invest_max = [200.0, 150.0]
+        gen.reservoir_head_min_factor = [0.45, 0.6]
 
         config = _make_esfex_config()
         # Inject reservoir generator
@@ -1943,6 +1944,7 @@ class TestReservoirRoundTrip:
 
         data = self._round_trip(config)
         hydro = data["systems"]["TestSystem"]["generators"]["hydro_dam"]
+        assert hydro["reservoir_head_min_factor"] == [0.45, 0.6]
         assert hydro["reservoir_capacity"] == [500.0, 300.0]
         assert hydro["reservoir_initial_level"] == [0.8, 0.6]
         assert hydro["reservoir_min_level"] == [0.1, 0.15]

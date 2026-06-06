@@ -631,6 +631,12 @@ class GeneratorConfig(BaseModel):
         description="Water travel time (hours) before this unit's release "
         "reaches its cascade_downstream reservoir.")
 
+    reservoir_head_min_factor: list[float] = Field(
+        default_factory=list,
+        description="Per-node turbine power-availability factor at the minimum "
+        "reservoir level (0-1]. 1.0 = no head effect; below 1.0 the available "
+        "power scales linearly with the fill level (head dependence).")
+
     risk_coefficient: list[float] = Field(
         default_factory=lambda: [1.0],
         description="Per-node geographic risk derating factor (0-1). "

@@ -1146,6 +1146,13 @@ def convert_generator_config(
         # water travel delay. Empty name = terminal reservoir.
         getattr(gen, 'cascade_downstream', '') or '',
         int(getattr(gen, 'cascade_delay_hours', 0) or 0),
+        # Head dependence: per-node power-availability factor at minimum level
+        # (1.0 = no head effect).
+        py_to_julia_vector(
+            prop(getattr(gen, 'reservoir_head_min_factor', None) or [1.0])
+            if bus_to_node
+            else (getattr(gen, 'reservoir_head_min_factor', None) or [1.0])
+        ),
     )
 
 
