@@ -71,14 +71,24 @@ All forms of electricity production: solar PV, wind turbines, diesel engines, ga
 
 #### Reservoir Mode (Hydro Generators)
 
-When the fuel type is set to **Water** (hydroelectric), additional fields appear:
+When the fuel type is set to **Water** (hydroelectric), the reservoir section appears. Hydro is then dispatched against a water-energy budget rather than as firm capacity.
 
 | Field | Unit | Description |
 |-------|------|-------------|
 | Reservoir Capacity | MWh | Maximum energy storage capacity of the reservoir |
 | Initial Level | fraction | Starting water level as a fraction of reservoir capacity |
-| Minimum Level | fraction | Minimum allowed water level (environmental flow constraint) |
+| Minimum / Maximum Level | fraction | Allowed water-level band |
 | Inflow Profile | path | CSV file with hourly water inflow in MW-equivalent |
+| Turbine / Pump Efficiency | fraction | Conversion efficiencies; pump capacity enables pumped storage |
+| Spillage Allowed | -- | Permit uncontrolled release when the reservoir is full |
+| Min Environmental Flow | MW | Mandatory minimum release (turbined and/or spilled) for ecological flow |
+| Head Min. Power Factor | 0-1 | Available turbine power at the minimum level. `1.0` = no head effect; below 1.0 the peak power scales linearly with the fill level (a low reservoir delivers less power) |
+| Cascade Downstream Reservoir | -- | Another reservoir generator that receives this unit's release (hydraulic cascade). Picked from the other reservoirs in the system |
+| Cascade Travel Delay | h | Water travel time before the release reaches the downstream reservoir |
+| Reservoir Expansion Cost / Max | $/MWh, MWh | Optional endogenous reservoir capacity expansion |
+
+!!! tip "Seasonal hydro"
+    Enable **Inter-Period Storage Linking** in [Global Settings](global-settings.md) to let reservoirs carry water across representative periods — water banked in a wet season is then available in a later dry one, instead of the level being cyclic within each period. The same toggle drives seasonal carry-over for batteries.
 
 ### Battery
 

@@ -142,6 +142,7 @@ nav:
     - Electrolyzer: formulation/electrolyzer.md
     - EV Model: formulation/ev-model.md
     - Rooftop Solar: formulation/rooftop-solar.md
+    - Reservoir Hydropower: formulation/reservoir-hydro.md
     - AC Optimal Power Flow: formulation/ac-power-flow.md
     - Frequency Stability: formulation/frequency-stability.md
     - Stochastic Programming: formulation/stochastic-programming.md

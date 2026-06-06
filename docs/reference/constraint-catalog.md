@@ -33,12 +33,16 @@ The objective applies per-segment marginal costs: `cost += marginal_cost_k * gse
 
 | Label Pattern | Family | Description |
 |---------------|--------|-------------|
-| `reservoir_level[g,n,1] == initial_level * capacity` | RES-1 | Initial reservoir level |
-| `level[t+1] = level[t]*(1-evap) + inflow - output/eta_t + pump*eta_p - spillage` | RES-2 | Reservoir dynamics (water balance) |
+| `reservoir_level[g,n,1] == initial_level * capacity` | RES-1 | Initial reservoir level (or seasonal boundary, RES-9) |
+| `level[t+1] = level[t]*(1-evap) + inflow + cascade_in - output/eta_t + pump*eta_p - spillage` | RES-2 | Reservoir dynamics (water balance) |
 | `min_level * total_cap <= level[g,n,t] <= max_level * total_cap` | RES-3 | Reservoir level bounds |
 | `pump[g,n,t] <= pump_capacity[n]` | RES-4 | Pump-back power limit |
 | `spillage[g,n,t] <= capacity` (or 0 if not allowed) | RES-5 | Spillage limit |
-| `level[g,n,end] ~ initial_level * capacity` (within tolerance) | RES-6 | Cyclic end-of-horizon constraint |
+| `level[g,n,end] ~ initial_level * capacity` (within tolerance) | RES-6 | Cyclic end-of-horizon constraint (replaced by RES-9 when seasonal) |
+| `output/eta_t + spillage >= min_release` | RES-7 | Minimum environmental / ecological flow |
+| `output <= rated*(hmf + (1-hmf)*(level-min*cap)/span)` | RES-8 | Head-dependent power limit (low level → less peak power) |
+| `cascade_in = sum_u (output_u/eta_u + spillage_u) @ t-delay` | RES-C | Hydraulic cascade: upstream release feeds downstream inflow |
+| `level[g,n,end] == next_period_boundary` | RES-9 | Seasonal inter-period level chain (TSAM linking) |
 | `reservoir_pump_term` subtracted from power balance | RES-PB | Pump as demand-side load |
 
 ### Battery Constraints

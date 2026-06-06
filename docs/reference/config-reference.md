@@ -297,7 +297,12 @@ generators:
 
 **Reservoir hydroelectric (optional)**:
 
-Empty lists indicate no reservoir. When `reservoir_capacity` has values, the generator gains SOC-like water dynamics.
+Empty lists indicate no reservoir. When `reservoir_capacity` has values, the generator gains a water-energy budget: hydro is dispatched against the reservoir's stored energy (not treated as firm MW) with an explicit water balance — inflow, turbining, pumping, spillage and evaporation — enforced in both the operational and capacity-expansion models. On top of the basic budget, four optional behaviours are available:
+
+- **Minimum environmental flow** (`reservoir_min_release`) — a mandatory release floor, met by turbining and/or spilling.
+- **Seasonal storage** — when [TSAM inter-period linking](../gui/global-settings.md) is enabled, the reservoir level is chained chronologically across representative periods, so water banked in a wet season is available in a later dry one (instead of being cyclic within each period).
+- **Hydraulic cascade** (`cascade_downstream`, `cascade_delay_hours`) — the water a reservoir releases becomes inflow to a downstream reservoir after a travel delay.
+- **Head dependence** (`reservoir_head_min_factor`) — a depleted reservoir has lower head and delivers less peak power.
 
 | Field | Type | Default | Unit | Description |
 |-------|------|---------|------|-------------|
@@ -313,6 +318,10 @@ Empty lists indicate no reservoir. When `reservoir_capacity` has values, the gen
 | `reservoir_spillage_allowed` | bool | `true` | -- | Allow uncontrolled spillage |
 | `reservoir_invest_cost` | list[float] | `[]` | $/MWh | Reservoir expansion cost |
 | `reservoir_invest_max` | list[float] | `[]` | MWh | Max reservoir expansion |
+| `reservoir_min_release` | list[float] | `[]` | MW-eq | Mandatory minimum / ecological release per node (turbined + spilled). `0` = none |
+| `cascade_downstream` | str | `""` | -- | Name of the downstream reservoir generator this unit discharges into. Empty = terminal |
+| `cascade_delay_hours` | int | `0` | h | Water travel time before the release reaches the downstream reservoir |
+| `reservoir_head_min_factor` | list[float] | `[]` | fraction | Power-availability factor at the minimum level (0-1]. `1.0` = no head effect; below 1.0 the available power scales linearly with the fill level |
 
 ---
 
