@@ -128,13 +128,15 @@ class SensitivityEngine:
         return self.n_base_samples * (D + 2)
 
     def generate_samples(self) -> np.ndarray:
-        """Generate Saltelli sample matrix.
+        """Generate the Sobol (Saltelli sequence) sample matrix.
 
-        Returns array of shape (N*(2D+2), D) where each row is a parameter set.
+        Returns array of shape (N*(D+2), D) — ``calc_second_order=False`` — where
+        each row is a parameter set. Uses ``SALib.sample.sobol``, the successor
+        to the deprecated ``SALib.sample.saltelli``.
         """
-        from SALib.sample import saltelli
+        from SALib.sample import sobol
 
-        return saltelli.sample(self.problem, self.n_base_samples, calc_second_order=False)
+        return sobol.sample(self.problem, self.n_base_samples, calc_second_order=False)
 
     def run_lp_analysis(
         self,

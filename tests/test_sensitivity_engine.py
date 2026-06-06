@@ -425,22 +425,22 @@ class TestSensitivityEngineInit:
 class TestGenerateSamples:
     """Tests for SensitivityEngine.generate_samples (mocked SALib)."""
 
-    def test_generate_samples_calls_saltelli(self):
-        """generate_samples delegates to SALib.sample.saltelli."""
+    def test_generate_samples_calls_sobol(self):
+        """generate_samples delegates to SALib.sample.sobol."""
         params = _make_parameters(2)
         engine = SensitivityEngine(mode="lp", parameters=params, n_base_samples=8)
 
         expected_shape = (8 * (2 * 2 + 2), 2)  # (48, 2)
         mock_array = np.random.rand(*expected_shape)
 
-        mock_saltelli = MagicMock()
-        mock_saltelli.sample.return_value = mock_array
+        mock_sobol_sample = MagicMock()
+        mock_sobol_sample.sample.return_value = mock_array
 
-        with patch.dict("sys.modules", {"SALib.sample.saltelli": mock_saltelli}):
+        with patch.dict("sys.modules", {"SALib.sample.sobol": mock_sobol_sample}):
             result = engine.generate_samples()
 
-        mock_saltelli.sample.assert_called_once()
-        call_args = mock_saltelli.sample.call_args
+        mock_sobol_sample.sample.assert_called_once()
+        call_args = mock_sobol_sample.sample.call_args
         assert call_args[0][1] == 8  # n_base_samples
         assert call_args[1]["calc_second_order"] is False
         np.testing.assert_array_equal(result, mock_array)
@@ -453,10 +453,10 @@ class TestGenerateSamples:
         n_eval = 4 * (2 * 3 + 2)
         mock_array = np.random.rand(n_eval, 3)
 
-        mock_saltelli = MagicMock()
-        mock_saltelli.sample.return_value = mock_array
+        mock_sobol_sample = MagicMock()
+        mock_sobol_sample.sample.return_value = mock_array
 
-        with patch.dict("sys.modules", {"SALib.sample.saltelli": mock_saltelli}):
+        with patch.dict("sys.modules", {"SALib.sample.sobol": mock_sobol_sample}):
             result = engine.generate_samples()
 
         assert result.shape == (n_eval, 3)
@@ -1365,8 +1365,8 @@ class TestRunLpAnalysis:
             "ST_conf": np.array([0.02]),
         }
 
-        mock_saltelli = MagicMock()
-        mock_saltelli.sample.return_value = mock_samples
+        mock_sobol_sample = MagicMock()
+        mock_sobol_sample.sample.return_value = mock_samples
 
         mock_sobol = MagicMock()
         mock_sobol.analyze.return_value = mock_si
@@ -1379,7 +1379,7 @@ class TestRunLpAnalysis:
         mock_lp_parser.perturb_and_solve.return_value = {"cost": 100.0}
 
         with patch.dict("sys.modules", {
-            "SALib.sample.saltelli": mock_saltelli,
+            "SALib.sample.sobol": mock_sobol_sample,
             "SALib.analyze": mock_salib_analyze,
             "SALib.analyze.sobol": mock_sobol,
             "esfex.sensitivity.lp_parser": mock_lp_parser,
@@ -1405,8 +1405,8 @@ class TestRunConfigAnalysis:
         n_eval = n_base_samples * (2 * n_params + 2)
         mock_samples = np.random.rand(n_eval, n_params)
 
-        mock_saltelli = MagicMock()
-        mock_saltelli.sample.return_value = mock_samples
+        mock_sobol_sample = MagicMock()
+        mock_sobol_sample.sample.return_value = mock_samples
 
         mock_sobol = MagicMock()
         mock_sobol.analyze.return_value = mock_si
@@ -1414,7 +1414,7 @@ class TestRunConfigAnalysis:
         mock_salib_analyze = MagicMock()
         mock_salib_analyze.sobol = mock_sobol
 
-        return n_eval, mock_saltelli, mock_salib_analyze, mock_sobol
+        return n_eval, mock_sobol_sample, mock_salib_analyze, mock_sobol
 
     def test_creates_temp_configs(self, tmp_path):
         """run_config_analysis creates temporary YAML config files."""
@@ -1438,12 +1438,12 @@ class TestRunConfigAnalysis:
             "S1_conf": np.array([0.01]),
             "ST_conf": np.array([0.02]),
         }
-        n_eval, mock_saltelli, mock_salib_analyze, mock_sobol = \
+        n_eval, mock_sobol_sample, mock_salib_analyze, mock_sobol = \
             self._setup_mocks(1, 4, mock_si)
 
         # Return the unmodified base_config to avoid numpy float serialization issues
         with patch.dict("sys.modules", {
-                 "SALib.sample.saltelli": mock_saltelli,
+                 "SALib.sample.sobol": mock_sobol_sample,
                  "SALib.analyze": mock_salib_analyze,
                  "SALib.analyze.sobol": mock_sobol,
              }), \
@@ -1481,11 +1481,11 @@ class TestRunConfigAnalysis:
             "S1_conf": np.array([0.01]),
             "ST_conf": np.array([0.02]),
         }
-        n_eval, mock_saltelli, mock_salib_analyze, mock_sobol = \
+        n_eval, mock_sobol_sample, mock_salib_analyze, mock_sobol = \
             self._setup_mocks(1, 4, mock_si)
 
         with patch.dict("sys.modules", {
-                 "SALib.sample.saltelli": mock_saltelli,
+                 "SALib.sample.sobol": mock_sobol_sample,
                  "SALib.analyze": mock_salib_analyze,
                  "SALib.analyze.sobol": mock_sobol,
              }), \
