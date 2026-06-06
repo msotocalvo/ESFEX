@@ -1142,6 +1142,10 @@ def convert_generator_config(
             if bus_to_node
             else (getattr(gen, 'reservoir_min_release', None) or [0.0])
         ),
+        # Hydraulic cascade (plant-level scalars): downstream reservoir name and
+        # water travel delay. Empty name = terminal reservoir.
+        getattr(gen, 'cascade_downstream', '') or '',
+        int(getattr(gen, 'cascade_delay_hours', 0) or 0),
     )
 
 

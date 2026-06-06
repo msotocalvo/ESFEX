@@ -621,6 +621,16 @@ class GeneratorConfig(BaseModel):
         description="Mandatory minimum reservoir release per node (MW-eq) — "
         "ecological / minimum environmental flow. 0 = none.")
 
+    cascade_downstream: str = Field(
+        default="",
+        description="Name of the downstream reservoir generator this unit "
+        "discharges into (hydraulic cascade). Empty = terminal reservoir.")
+    cascade_delay_hours: int = Field(
+        default=0,
+        ge=0,
+        description="Water travel time (hours) before this unit's release "
+        "reaches its cascade_downstream reservoir.")
+
     risk_coefficient: list[float] = Field(
         default_factory=lambda: [1.0],
         description="Per-node geographic risk derating factor (0-1). "

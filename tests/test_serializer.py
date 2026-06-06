@@ -1955,6 +1955,27 @@ class TestReservoirRoundTrip:
         assert hydro["reservoir_invest_cost"] == [100000.0, 80000.0]
         assert hydro["reservoir_invest_max"] == [200.0, 150.0]
 
+    def test_cascade_fields_survive_round_trip(self):
+        """Hydraulic cascade (downstream name + delay) survives the round-trip."""
+        gen = _make_generator(
+            "Hydro_Lower", "Renewable", "Hydro",
+            rated_power=[200.0, 100.0],
+        )
+        gen.reservoir_capacity = [500.0, 300.0]
+        gen.cascade_downstream = "Hydro_Outlet"
+        gen.cascade_delay_hours = 4
+
+        config = _make_esfex_config()
+        config.systems["TestSystem"].generators["hydro_lower"] = gen
+
+        data = self._round_trip(config)
+        gens = data["systems"]["TestSystem"]["generators"]
+        hydro = gens["hydro_lower"]
+        assert hydro["cascade_downstream"] == "Hydro_Outlet"
+        assert hydro["cascade_delay_hours"] == 4
+        # A non-cascade generator stays clean (no downstream key emitted).
+        assert "cascade_downstream" not in gens["gas_turbine"]
+
     def test_gui_generator_instance_has_reservoir_fields(self):
         """GuiGeneratorInstance should have all reservoir attributes."""
         inst = GuiGeneratorInstance(

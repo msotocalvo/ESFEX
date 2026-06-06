@@ -674,6 +674,8 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
                 current_type=getattr(gen, 'current_type', 'AC'),
                 reservoir_inflow_file=getattr(gen, 'reservoir_inflow_file', None),
                 reservoir_spillage_allowed=getattr(gen, 'reservoir_spillage_allowed', True),
+                cascade_downstream=getattr(gen, 'cascade_downstream', '') or '',
+                cascade_delay_hours=int(getattr(gen, 'cascade_delay_hours', 0) or 0),
             )
             # Copy scalar values from per-node arrays
             for f in _GEN_SCALAR_FIELDS:
@@ -2663,6 +2665,10 @@ def _apply_gui_state_to_dict(state: GuiSystemState, sys_dict: dict):
         if rep.reservoir_inflow_file:
             gen_dict["reservoir_inflow_file"] = rep.reservoir_inflow_file
         gen_dict["reservoir_spillage_allowed"] = getattr(rep, 'reservoir_spillage_allowed', True)
+        _casc = getattr(rep, 'cascade_downstream', '') or ''
+        if _casc:
+            gen_dict["cascade_downstream"] = _casc
+            gen_dict["cascade_delay_hours"] = int(getattr(rep, 'cascade_delay_hours', 0) or 0)
         # Rebuild per-node arrays
         for field_name in _GEN_SCALAR_FIELDS:
             arr = [0] * n if field_name in ("life_time", "initial_age", "min_up", "min_down") else [0.0] * n

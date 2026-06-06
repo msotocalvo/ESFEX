@@ -292,6 +292,18 @@ class GeneratorForm(QWidget):
         self._reservoir_min_release = self._dbl_spin(0, 1e6, 3)
         fl_res.addRow(tr("generator_form.reservoir_min_release"), self._reservoir_min_release)
 
+        # Hydraulic cascade: this reservoir discharges into another one. The
+        # combo is populated with the other reservoir generators at load time.
+        self._cascade_downstream = QComboBox()
+        self._cascade_downstream.setEditable(True)
+        self._cascade_downstream.currentTextChanged.connect(self._on_changed)
+        fl_res.addRow(tr("generator_form.cascade_downstream"), self._cascade_downstream)
+
+        self._cascade_delay_hours = QSpinBox()
+        self._cascade_delay_hours.setRange(0, 168)
+        self._cascade_delay_hours.valueChanged.connect(self._on_changed)
+        fl_res.addRow(tr("generator_form.cascade_delay_hours"), self._cascade_delay_hours)
+
         self._reservoir_group.setVisible(False)
         layout.addWidget(self._reservoir_group)
 
@@ -416,6 +428,20 @@ class GeneratorForm(QWidget):
         self._reservoir_invest_max.setValue(inst.reservoir_invest_max)
         self._reservoir_min_release.setValue(
             getattr(inst, "reservoir_min_release", 0.0))
+        # Cascade: offer the other reservoir generators as downstream targets.
+        self._cascade_downstream.blockSignals(True)
+        self._cascade_downstream.clear()
+        self._cascade_downstream.addItem("")  # terminal (no downstream)
+        for g in self._model.state.generators.values():
+            if g is inst:
+                continue
+            if getattr(g, "reservoir_capacity", 0) > 0 and g.name:
+                self._cascade_downstream.addItem(g.name)
+        self._cascade_downstream.setCurrentText(
+            getattr(inst, "cascade_downstream", "") or "")
+        self._cascade_downstream.blockSignals(False)
+        self._cascade_delay_hours.setValue(
+            int(getattr(inst, "cascade_delay_hours", 0) or 0))
         self._reservoir_group.setVisible(inst.reservoir_capacity > 0)
 
         # Set default color based on generator type before loading style
@@ -491,6 +517,8 @@ class GeneratorForm(QWidget):
             ("reservoir_invest_cost", self._reservoir_invest_cost),
             ("reservoir_invest_max", self._reservoir_invest_max),
             ("reservoir_min_release", self._reservoir_min_release),
+            ("cascade_downstream", self._cascade_downstream),
+            ("cascade_delay_hours", self._cascade_delay_hours),
         ]
 
     # ------------------------------------------------------------------

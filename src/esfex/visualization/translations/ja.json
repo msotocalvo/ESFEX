@@ -330,6 +330,8 @@
     "reservoir_invest_cost": "貯水池投資コスト ($/MWh):",
     "reservoir_invest_max": "最大貯水池拡張 (MWh):",
     "reservoir_min_release": "最小環境流量 (MW):",
+    "cascade_downstream": "下流貯水池（カスケード）:",
+    "cascade_delay_hours": "カスケード移動遅延 (h):",
     "curve_type": "コスト曲線:",
     "price_at_zero": "0%時価格 ($/MWh):",
     "price_at_max": "100%時価格 ($/MWh):",
