@@ -18,11 +18,11 @@ pull requests, or discussions.
 
 Report them privately instead, by either:
 
-- **Email** (preferred) — send a description to **manuel.sotocalvo@gmail.com**
+- **GitHub Security Advisories** (preferred) — use the repository's
+  [**Security → Report a vulnerability**](https://github.com/Net-Zero-Horizon/ESFEX/security/advisories/new)
+  form, which is private to the maintainers and tracks the report to resolution.
+- **Email** — alternatively, send a description to **manuel.sotocalvo@gmail.com**
   with the subject line `ESFEX security`.
-- **GitHub Security Advisories** — where enabled, use the repository's
-  **Security → Report a vulnerability** form, which is private to the
-  maintainers.
 
 Please include:
 
