@@ -2004,6 +2004,38 @@ class TestReservoirRoundTrip:
         assert inst.reservoir_invest_max == 0.0
 
 
+class TestForecastDemandSerialization:
+    """Grid Builder forecast demand must reach the config as demand_paths (#7)."""
+
+    def test_demand_paths_emitted_from_forecast(self, tmp_path):
+        from types import SimpleNamespace
+
+        import numpy as np
+
+        from esfex.visualization.workflows.grid_mapping_steps import (
+            write_forecast_demand_csvs,
+        )
+
+        config = _make_esfex_config()
+        states = config_to_gui_states(config)
+        state = states["TestSystem"]
+        n = len(state.nodes)
+        series = np.tile(np.array([10.0, 20.0, 15.0]).reshape(-1, 1), (1, n))
+        result = SimpleNamespace(
+            demand_multi_year=series, demand=None, peak_mw=[20.0] * n)
+
+        assert write_forecast_demand_csvs(
+            state.nodes, result, tmp_path / "demand") == n
+
+        out = tmp_path / "out.yaml"
+        gui_state_to_yaml(states=states, base_config=config, output_path=out)
+        data = yaml.safe_load(out.read_text())
+
+        dp = data["systems"]["TestSystem"].get("demand_paths")
+        assert dp is not None and len(dp) == n
+        assert all(p.endswith(".csv") and Path(p).exists() for p in dp)
+
+
 # =====================================================================
 # Cost curve serialization helpers
 # =====================================================================

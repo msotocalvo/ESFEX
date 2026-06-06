@@ -4009,6 +4009,68 @@ def fuel_auto_route(
 # =====================================================================
 
 
+def write_forecast_demand_csvs(nodes, result, out_dir: Path) -> int:
+    """Persist a demand forecast onto the model's nodes.
+
+    Writes each node's hourly series (the full multi-year forecast when
+    available, otherwise the single representative year — the same choice the
+    standalone demand wizard's export makes) to ``out_dir/demand_<node>.csv``
+    and stores a full :class:`GuiNodeDemand` (``csv_path`` + ``data`` + stats)
+    on the node. That is what lets the serializer emit the system's
+    ``demand_paths`` and the runner load per-node demand. Returns the number of
+    nodes that received demand. The series stays in memory even if a file write
+    fails.
+    """
+    import re
+
+    from esfex.visualization.data.gui_model import GuiNodeDemand
+
+    series = getattr(result, "demand_multi_year", None)
+    if series is None:
+        series = getattr(result, "demand", None)
+    if series is None:
+        return 0
+
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    peak_list = list(getattr(result, "peak_mw", []) or [])
+    ncols = series.shape[1] if series.ndim > 1 else 1
+    used: set[str] = set()
+    applied = 0
+    for i, node in enumerate(nodes):
+        if i >= ncols:
+            break
+        col = series[:, i] if series.ndim > 1 else series
+        safe = re.sub(
+            r"[^0-9A-Za-z._-]+", "_",
+            node.name or f"node_{i}").strip("_") or f"node_{i}"
+        base, k = safe, 1
+        while safe in used:
+            safe, k = f"{base}_{k}", k + 1
+        used.add(safe)
+        data_list = [float(x) for x in col]
+        csv_path = None
+        try:
+            path = out_dir / f"demand_{safe}.csv"
+            np.savetxt(str(path), col, fmt="%.4f")
+            csv_path = str(path)
+        except Exception:
+            pass  # keep the series in memory even if the write fails
+        node.demand = GuiNodeDemand(
+            csv_path=csv_path,
+            data=data_list,
+            num_hours=len(data_list),
+            peak_mw=(peak_list[i] if i < len(peak_list)
+                     else float(max(data_list, default=0.0))),
+            total_mwh=float(sum(data_list)),
+        )
+        applied += 1
+    return applied
+
+
 class GridMappingDemandStep(QWidget):
     """Forecast demand per node and distribute among busbars.
 
@@ -4946,21 +5008,18 @@ class GridMappingDemandStep(QWidget):
         applied_fracs = 0
         applied_demand = 0
 
-        # Apply forecast demand to nodes (if forecast was run)
+        # Apply forecast demand to nodes (if forecast was run). Each node's
+        # hourly series is written to a CSV and a full GuiNodeDemand is stored
+        # (csv_path + data + stats), so the serializer emits ``demand_paths``
+        # and the runner finds the files. (Previously only the summary stats
+        # were stashed on a SimpleNamespace, leaving demand_paths empty.)
         if self._forecast_result is not None:
-            result = self._forecast_result
-            for i, node in enumerate(state.nodes):
-                if i < len(result.peak_mw):
-                    try:
-                        if node.demand is None:
-                            from types import SimpleNamespace
-                            node.demand = SimpleNamespace(
-                                peak_mw=0.0, annual_gwh=0.0)
-                        node.demand.peak_mw = result.peak_mw[i]
-                        node.demand.annual_gwh = result.annual_gwh[i]
-                        applied_demand += 1
-                    except Exception:
-                        pass
+            # Output dir: alongside the loaded YAML if known (same convention as
+            # availability profiles), else the working directory.
+            cfg_path = getattr(self.window(), "_config_path", None)
+            out_dir = (Path(cfg_path).parent if cfg_path else Path.cwd()) / "demand"
+            applied_demand += write_forecast_demand_csvs(
+                state.nodes, self._forecast_result, out_dir)
 
         # Apply bus fractions
         skipped_connection = 0
