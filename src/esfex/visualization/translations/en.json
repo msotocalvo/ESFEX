@@ -97,7 +97,7 @@
     "acdc_conv": "AC/DC Conv.",
     "freq_conv": "Freq. Conv.",
     "electrolyzer": "Electrolyzer",
-    "fuel_entry": "Fuel Entry",
+    "fuel_entry": "Fuel Source",
     "fuel_storage": "Fuel Store",
     "fuel_route": "Fuel Route",
     "validate": "Validate",
@@ -122,7 +122,7 @@
     "acdc_conv": "Add AC/DC Converter",
     "freq_conv": "Add Frequency Converter",
     "electrolyzer": "Add Electrolyzer",
-    "fuel_entry": "Add Fuel Entry",
+    "fuel_entry": "Add Fuel Source",
     "fuel_storage": "Add Fuel Storage",
     "fuel_route": "Add Fuel Route",
     "validate": "Validate",
@@ -173,8 +173,7 @@
     "lines": "Transmission Lines",
     "transformers": "Transformers",
     "zones": "Development Zones",
-    "fuel_entries": "Fuel Entry Points",
-    "fuel_sources": "Fuel Sources",
+    "fuel_entries": "Fuel Sources",
     "fuel_storages": "Fuel Storages",
     "fuel_routes": "Fuel Routes",
     "fuels": "Fuels",
@@ -589,7 +588,12 @@
     "latitude": "Latitude:",
     "longitude": "Longitude:",
     "max_import_rate": "Max Import Rate (units/h):",
-    "per_fuel_params": "Parameters for {fuel}"
+    "per_fuel_params": "Parameters for {fuel}",
+    "import_cost": "Import Cost ($/unit)",
+    "transport_transit_days_per_100km": "Transit (days/100km)",
+    "disruption_start_hour": "Disrupt. Start (h)",
+    "disruption_end_hour": "Disrupt. End (h)",
+    "disruption_availability": "Disrupt. Avail. (0-1)"
   },
   "fuel_storage_form": {
     "group_parameters": "Storage Parameters",
@@ -626,28 +630,6 @@
     "price_base": "Base Price ($/unit):",
     "price_growth": "Price Growth Rate (frac/yr):",
     "n_selected": "{n} fuels selected"
-  },
-  "fuel_source_form": {
-    "group_basic": "Basic Properties",
-    "group_system": "System Parameters",
-    "group_per_node": "Per-Node Parameters",
-    "max_avail": "Max Avail",
-    "import_cost": "Import Cost ($/unit)",
-    "storage_cap": "Storage Cap",
-    "init_storage": "Init Storage",
-    "system_label": "System: {name}",
-    "n_selected": "{n} fuel sources selected",
-    "unit": "Unit:",
-    "min_storage_level": "Min Storage Level (frac):",
-    "storage_invest_cost": "Storage Inv. Cost ($/unit):",
-    "transport_cost": "Transport Cost ($/unit/km):",
-    "transport_losses": "Transport Losses (frac):",
-    "transport_transit_days_per_100km": "Transit Lead Time (days/100km):",
-    "disruption_start_hour": "Disruption Start (hour):",
-    "disruption_end_hour": "Disruption End (hour):",
-    "disruption_availability": "Disruption Availability (0-1):",
-    "max_storage_inv": "Max Storage Inv/Node (units):",
-    "max_transport_inv": "Max Transport Inv/Arc (units):"
   },
   "technology_form": {
     "group_identity": "Identity",
@@ -1173,7 +1155,10 @@
     "tool.run": "Run Simulation",
     "tool.sensitivity": "Sensitivity Analysis",
     "tool.results": "View Results",
-    "tool.risk": "Risk & Resilience"
+    "tool.risk": "Risk & Resilience",
+    "tool": {
+      "fuel_entry": "Fuel Source"
+    }
   },
   "validation": {
     "title": "Network Validation",
@@ -1420,7 +1405,7 @@
     "confirm_split_title": "Connect to Line",
     "confirm_split_msg": "Do you want to connect '{element}' to '{line}'?",
     "failed_add_element": "Failed to add element:\n{e}",
-    "failed_add_fuel_entry": "Failed to add fuel entry:\n{e}",
+    "failed_add_fuel_entry": "Failed to add fuel source:\n{e}",
     "parse_complete_title": "Parse Complete",
     "load_error_title": "Load Error",
     "load_error_msg": "Failed to load config:\n{e}",

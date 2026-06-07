@@ -231,32 +231,26 @@ Interconnects systems operating at different frequencies (e.g., 50 Hz and 60 Hz)
 
 ## Fuel Infrastructure
 
-### Fuel Entry Point
+### Fuel Source
 
-Locations where fuel enters the system: ports, pipeline terminals, LNG terminals, etc.
+A location where fuel enters the system — a port, pipeline terminal, or LNG
+terminal — together with the supply characteristics of each fuel delivered
+there. Placed on the map and configured per fuel. (A Fuel Source is the single
+fuel-supply concept; earlier versions split it into a separate "Fuel Entry
+Point" and "Fuel Source".)
 
 | Field | Unit | Description |
 |-------|------|-------------|
-| Name | -- | Entry point name (e.g., "Port of Mariel LNG Terminal") |
+| Name | -- | Source name (e.g., "Port of Mariel LNG Terminal") |
 | Node | -- | Associated network node index |
-| Fuels | -- | Available fuel types (multi-select checkboxes). Select all fuels that can be imported at this location. |
-| **Per-fuel table** | | For each selected fuel: |
-| -- Max Import Rate | MW | Maximum fuel import rate in energy-equivalent terms |
-| -- Import Cost | $/MWh | Cost per MWh of fuel imported at this entry point |
-
-### Fuel Source
-
-Primary energy supply characteristics.
-
-| Section | Field | Description |
-|---------|-------|-------------|
-| **Properties** | Name | Source identification (e.g., "Caribbean Diesel Supply") |
-| | Fuel Type | Single fuel type this source provides |
-| **Per-node table** | Availability | Maximum extraction/import rate per node (MW) |
-| | Import Cost | Cost per MWh at each node |
-| | Storage Capacity | Local buffer storage capacity at each node (MWh) |
-| **Transport** | Cost per km | Transport cost per MWh per km |
-| | Loss Factor | Fraction of fuel lost per km of transport |
+| Fuels | -- | Fuel types supplied here (add/remove). |
+| **Per-fuel table** | | For each fuel: |
+| -- Max Import Rate | units/h | Maximum supply (import) rate |
+| -- Import Cost | $/unit | Cost per unit of fuel supplied here |
+| -- Transit (days/100km) | days/100km | Source→tank replenishment lead time. Models supply stress: a shipment dispatched now arrives after this delay scaled by route distance. `0` = instantaneous. |
+| -- Disrupt. Start (h) | hour | Supply-disruption window start (inclusive). |
+| -- Disrupt. End (h) | hour | Supply-disruption window end (exclusive). `end <= start` disables the disruption. |
+| -- Disrupt. Avail. (0-1) | fraction | Availability during the disruption window (`0` = full cut, `1` = no disruption). |
 
 ### Fuel Storage
 

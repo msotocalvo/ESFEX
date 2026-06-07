@@ -71,7 +71,7 @@ Marker sizes scale with rated capacity. Renewable generators (Solar, Wind, Hydro
 
 Fuel entry points, fuel storage, and electrolyzers work the same way as generators -- select the mode, click near a node, and configure in the Properties Panel.
 
-- **Fuel Entry** -- Represents a fuel import point (port, pipeline terminal). Configure available fuel types, import rates, and costs.
+- **Fuel Source** -- A fuel import point (port, pipeline terminal). Configure available fuel types, import rates, costs, and supply-stress parameters (transit lead time, disruption window).
 - **Fuel Storage** -- Represents a fuel storage facility. Configure capacity, initial levels, and minimum levels per fuel type.
 
 
@@ -115,7 +115,7 @@ Line endpoints automatically snap to nearby magnetic elements when you click wit
 | Generator |
 | Battery |
 | Transformer |
-| Fuel Entry |
+| Fuel Source |
 
 When a node moves (dragged), all connected line endpoints update automatically. The snap system uses `EndpointRef(element_type, element_id)` references internally, so connections survive element repositioning.
 

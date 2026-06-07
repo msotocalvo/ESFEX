@@ -32,6 +32,10 @@ from esfex.visualization.panels.word_wrap_header import WordWrapHeaderView
 _COL_FUEL = 0
 _COL_MAX_IMPORT = 1
 _COL_IMPORT_COST = 2
+_COL_TRANSIT = 3
+_COL_DISRUPT_START = 4
+_COL_DISRUPT_END = 5
+_COL_DISRUPT_AVAIL = 6
 
 
 class FuelEntryForm(QWidget):
@@ -100,11 +104,15 @@ class FuelEntryForm(QWidget):
         # Fuels table: Fuel | Max Import | Import Cost
         self._fuel_table = QTableWidget()
         self._fuel_table.setHorizontalHeader(WordWrapHeaderView(self._fuel_table))
-        self._fuel_table.setColumnCount(3)
+        self._fuel_table.setColumnCount(7)
         self._fuel_table.setHorizontalHeaderLabels([
             tr("generator_form.fuel"),
             tr("fuel_entry_form.max_import_rate"),
-            tr("fuel_source_form.import_cost"),
+            tr("fuel_entry_form.import_cost"),
+            tr("fuel_entry_form.transport_transit_days_per_100km"),
+            tr("fuel_entry_form.disruption_start_hour"),
+            tr("fuel_entry_form.disruption_end_hour"),
+            tr("fuel_entry_form.disruption_availability"),
         ])
         self._fuel_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
@@ -180,6 +188,23 @@ class FuelEntryForm(QWidget):
                 self._fuel_table.setItem(
                     row, _COL_IMPORT_COST,
                     QTableWidgetItem(f"{params.import_cost:.2f}"),
+                )
+                # Supply-stress params (source->tank transit, disruption window)
+                self._fuel_table.setItem(
+                    row, _COL_TRANSIT,
+                    QTableWidgetItem(f"{params.transport_transit_days_per_100km:.2f}"),
+                )
+                self._fuel_table.setItem(
+                    row, _COL_DISRUPT_START,
+                    QTableWidgetItem(f"{int(params.disruption_start_hour)}"),
+                )
+                self._fuel_table.setItem(
+                    row, _COL_DISRUPT_END,
+                    QTableWidgetItem(f"{int(params.disruption_end_hour)}"),
+                )
+                self._fuel_table.setItem(
+                    row, _COL_DISRUPT_AVAIL,
+                    QTableWidgetItem(f"{params.disruption_availability:.3f}"),
                 )
         self._fuel_table.blockSignals(False)
 
@@ -258,6 +283,14 @@ class FuelEntryForm(QWidget):
             params.max_import_rate = val
         elif col == _COL_IMPORT_COST:
             params.import_cost = val
+        elif col == _COL_TRANSIT:
+            params.transport_transit_days_per_100km = max(0.0, val)
+        elif col == _COL_DISRUPT_START:
+            params.disruption_start_hour = max(0, int(val))
+        elif col == _COL_DISRUPT_END:
+            params.disruption_end_hour = max(0, int(val))
+        elif col == _COL_DISRUPT_AVAIL:
+            params.disruption_availability = min(1.0, max(0.0, val))
         self.fuelEntryChanged.emit(self._current_idx)
 
     def _on_changed(self):

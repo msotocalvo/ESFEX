@@ -97,7 +97,7 @@
     "acdc_conv": "Conv. AC/DC",
     "freq_conv": "Conv. Frec.",
     "electrolyzer": "Electrolizador",
-    "fuel_entry": "Entrada Comb.",
+    "fuel_entry": "Fuente de Combustible",
     "fuel_storage": "Almac. Comb.",
     "fuel_route": "Ruta Comb.",
     "validate": "Validar",
@@ -122,7 +122,7 @@
     "acdc_conv": "Agregar Convertidor AC/DC",
     "freq_conv": "Agregar Convertidor de Frecuencia",
     "electrolyzer": "Agregar Electrolizador",
-    "fuel_entry": "Agregar Entrada de Combustible",
+    "fuel_entry": "Agregar Fuente de Combustible",
     "fuel_storage": "Agregar Almacén de Combustible",
     "fuel_route": "Agregar Ruta de Combustible",
     "validate": "Validar",
@@ -173,8 +173,7 @@
     "lines": "Líneas de Transmisión",
     "transformers": "Transformadores",
     "zones": "Zonas de Desarrollo",
-    "fuel_entries": "Puntos de Entrada de Combustible",
-    "fuel_sources": "Fuentes de Combustible",
+    "fuel_entries": "Fuentes de Combustible",
     "fuel_storages": "Almacenes de Combustible",
     "fuel_routes": "Rutas de Combustible",
     "fuels": "Combustibles",
@@ -589,7 +588,12 @@
     "latitude": "Latitud:",
     "longitude": "Longitud:",
     "max_import_rate": "Tasa Máx. Importación (unid./h):",
-    "per_fuel_params": "Parámetros de {fuel}"
+    "per_fuel_params": "Parámetros de {fuel}",
+    "import_cost": "Costo Import. ($/unid.)",
+    "transport_transit_days_per_100km": "Tránsito (días/100km)",
+    "disruption_start_hour": "Inicio Disrup. (h)",
+    "disruption_end_hour": "Fin Disrup. (h)",
+    "disruption_availability": "Disp. en Disrup. (0-1)"
   },
   "fuel_storage_form": {
     "group_parameters": "Parámetros de Almacenamiento",
@@ -626,28 +630,6 @@
     "price_base": "Precio Base ($/unid.):",
     "price_growth": "Tasa Crec. Precio (frac/año):",
     "n_selected": "{n} combustibles seleccionados"
-  },
-  "fuel_source_form": {
-    "group_basic": "Propiedades Básicas",
-    "group_system": "Parámetros del Sistema",
-    "group_per_node": "Parámetros por Nodo",
-    "max_avail": "Disp. Máx.",
-    "import_cost": "Costo Import. ($/unid.)",
-    "storage_cap": "Cap. Almac.",
-    "init_storage": "Almac. Inicial",
-    "system_label": "Sistema: {name}",
-    "n_selected": "{n} fuentes de combustible seleccionadas",
-    "unit": "Unidad:",
-    "min_storage_level": "Nivel Mín. Almac. (frac):",
-    "storage_invest_cost": "Costo Inv. Almac. ($/unid.):",
-    "transport_cost": "Costo Transporte ($/unid./km):",
-    "transport_losses": "Pérdidas Transporte (frac):",
-    "transport_transit_days_per_100km": "Tiempo de Tránsito (días/100km):",
-    "disruption_start_hour": "Inicio Disrupción (hora):",
-    "disruption_end_hour": "Fin Disrupción (hora):",
-    "disruption_availability": "Disponibilidad en Disrupción (0-1):",
-    "max_storage_inv": "Inv. Máx. Almac./Nodo (unid.):",
-    "max_transport_inv": "Inv. Máx. Transp./Arco (unid.):"
   },
   "technology_form": {
     "group_identity": "Identidad",
@@ -1134,7 +1116,10 @@
     "tool.run": "Ejecutar Simulación",
     "tool.sensitivity": "Análisis de Sensibilidad",
     "tool.results": "Ver Resultados",
-    "tool.risk": "Riesgo y Resiliencia"
+    "tool.risk": "Riesgo y Resiliencia",
+    "tool": {
+      "fuel_entry": "Fuente de Combustible"
+    }
   },
   "validation": {
     "title": "Validación de Red",
@@ -1381,7 +1366,7 @@
     "confirm_split_title": "Conectar a Línea",
     "confirm_split_msg": "¿Desea conectar '{element}' a '{line}'?",
     "failed_add_element": "Error al agregar elemento:\n{e}",
-    "failed_add_fuel_entry": "Error al agregar entrada de combustible:\n{e}",
+    "failed_add_fuel_entry": "Error al agregar fuente de combustible:\n{e}",
     "parse_complete_title": "Análisis Completo",
     "load_error_title": "Error de Carga",
     "load_error_msg": "Error al cargar configuración:\n{e}",

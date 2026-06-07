@@ -56,7 +56,7 @@ Hierarchical overview of every object in the project:
 - **Stochastic Scenarios** -- Multi-scenario definitions with probability weights and cost multipliers.
 - **Inter-system Links** -- Cross-system transmission lines and fuel routes.
 - **Each System** -- Shown in bold as a top-level node, expandable into component categories:
-  - Nodes, Generators, Batteries, Transmission Lines, Transformers, Buses, AC/DC Converters, Frequency Converters, Development Zones, Fuel Entries, Fuel Sources, Fuel Storages, Fuel Routes, Fuels, Electrolyzers, EV Configuration, Rooftop Solar, Technologies, Investment Portfolio
+  - Nodes, Generators, Batteries, Transmission Lines, Transformers, Buses, AC/DC Converters, Frequency Converters, Development Zones, Fuel Sources, Fuel Storages, Fuel Routes, Fuels, Electrolyzers, EV Configuration, Rooftop Solar, Technologies, Investment Portfolio
 
 Each category displays an element count in parentheses, e.g. "Generators (12)". Clicking any item selects it on the map and opens its property form. A search box at the top filters by name in real time.
 
@@ -98,7 +98,7 @@ Drawing modes, layer controls, and analysis actions. All drawing mode buttons ar
 | **AC/DC Converter** | `add_acdc_converter` | Place an AC/DC converter near a bus |
 | **Freq Converter** | `add_freq_converter` | Place a frequency converter between two buses |
 | **Electrolyzer** | `add_electrolyzer` | Place an electrolyzer near a bus |
-| **Fuel Entry** | `add_fuel_entry` | Place a fuel import point near a node |
+| **Fuel Source** | `add_fuel_entry` | Place a fuel source (import point) near a node |
 | **Fuel Storage** | `add_fuel_storage` | Place fuel storage near a node |
 | **Fuel Route** | `add_fuel_route` | Draw a fuel transport route using polyline trace |
 

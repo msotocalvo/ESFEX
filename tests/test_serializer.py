@@ -2065,53 +2065,64 @@ class TestDeletedSystemPruning:
 
 
 class TestFuelSupplyStressRoundTrip:
-    """The fuel-supply-stress params (#13) survive config<->GUI<->YAML and reach
-    the bridge (i.e. land in the serialized source dict)."""
+    """The fuel-supply-stress params (#13) live on the Fuel Source (entry point):
+    they survive config<->GUI<->YAML and reach the solver via the runner's
+    entry-point -> internal-source builder."""
 
-    def test_source_stress_params_round_trip(self, tmp_path):
-        from esfex.config.schema import PrimaryEnergySourceConfig
+    def test_entry_point_stress_params_round_trip(self, tmp_path):
+        from esfex.config.schema import FuelEntryPointConfig, GeoCoordinate
+        from esfex.runner import Orchestrator
 
-        config = _make_esfex_config()
+        sys_cfg = _make_system_config()
+        sys_cfg.fuel_entry_points = [
+            FuelEntryPointConfig(
+                name="Port", fuels=["Gas"], node=0,
+                coordinate=GeoCoordinate(latitude=10.0, longitude=20.0),
+                fuel_params={
+                    "Gas": {
+                        "max_import_rate": 1000.0, "import_cost": 5.0,
+                        "transport_transit_days_per_100km": 2.0,
+                        "disruption_start_hour": 100, "disruption_end_hour": 200,
+                        "disruption_availability": 0.3,
+                    }
+                },
+            )
+        ]
+        config = _make_esfex_config(sys_cfg)
         sysname = next(iter(config.systems))
-        config.systems[sysname].primary_energy_sources = {
-            "Gas": PrimaryEnergySourceConfig(
-                name="Gas", unit="kTon",
-                max_availability=[100.0, 100.0], import_cost=[5.0, 5.0],
-                storage_capacity=[100.0, 100.0],
-                initial_storage_level=[0.5, 0.5],
-                min_storage_level=0.25, storage_investment_cost=0.0,
-                transport_cost=0.1, transport_losses=0.01,
-                max_storage_investment_per_node=0.0,
-                max_transport_investment_per_arc=0.0,
-                transport_transit_days_per_100km=2.0,
-                disruption_start_hour=100, disruption_end_hour=200,
-                disruption_availability=0.3),
-        }
 
-        # config -> GUI carries every field.
+        # config -> GUI: the entry point's per-fuel params carry every field.
         states = config_to_gui_states(config)
-        src = states[sysname].fuel_sources["Gas"]
-        assert src.transport_transit_days_per_100km == 2.0
-        assert src.disruption_start_hour == 100
-        assert src.disruption_end_hour == 200
-        assert src.disruption_availability == 0.3
-        assert src.min_storage_level == 0.25
+        fp = states[sysname].fuel_entry_points[0].fuel_params["Gas"]
+        assert fp.transport_transit_days_per_100km == 2.0
+        assert fp.disruption_start_hour == 100
+        assert fp.disruption_end_hour == 200
+        assert fp.disruption_availability == 0.3
 
-        # GUI -> YAML: the serialized source dict (what the bridge reads) has them.
+        # GUI -> YAML: the serialized fuel_params (what the runner reads) has them.
         out = tmp_path / "out.yaml"
         gui_state_to_yaml(states, config, out)
         data = yaml.safe_load(out.read_text())
-        sd = data["systems"][sysname]["primary_energy_sources"]["Gas"]
+        sd = data["systems"][sysname]["fuel_entry_points"][0]["fuel_params"]["Gas"]
         assert sd["transport_transit_days_per_100km"] == 2.0
         assert sd["disruption_start_hour"] == 100
         assert sd["disruption_end_hour"] == 200
         assert sd["disruption_availability"] == 0.3
-        assert sd["min_storage_level"] == 0.25
 
-        # ...and they survive a reload.
-        src2 = config_to_gui_states(ESFEXConfig(**data))[sysname].fuel_sources["Gas"]
-        assert src2.transport_transit_days_per_100km == 2.0
-        assert src2.disruption_availability == 0.3
+        # ...survive a reload...
+        reloaded = ESFEXConfig(**data)
+        fp2 = config_to_gui_states(reloaded)[sysname].fuel_entry_points[0].fuel_params["Gas"]
+        assert fp2.transport_transit_days_per_100km == 2.0
+        assert fp2.disruption_availability == 0.3
+
+        # ...and the runner propagates them into the internal solver source.
+        rsys = reloaded.systems[sysname]
+        pe = Orchestrator._build_pe_sources_from_entries(None, rsys, rsys.num_nodes)
+        gas = pe["Gas"]
+        assert gas["transport_transit_days_per_100km"] == 2.0
+        assert gas["disruption_start_hour"] == 100
+        assert gas["disruption_end_hour"] == 200
+        assert gas["disruption_availability"] == 0.3
 
 
 # =====================================================================

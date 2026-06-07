@@ -31,8 +31,7 @@ Each system contains these categories (element count shown in parentheses):
 | **AC/DC Converters** | Interface between AC and DC buses |
 | **Frequency Converters** | Interface between different frequency systems |
 | **Development Zones** | Geographic areas for new capacity installation |
-| **Fuel Entries** | Fuel import points |
-| **Fuel Sources** | Primary energy supply definitions |
+| **Fuel Sources** | Fuel supply points (ports/terminals) and their per-fuel supply parameters |
 | **Fuel Storages** | Fuel stockpiling facilities |
 | **Fuel Routes** | Fuel transport pathways |
 | **Fuels** | Fuel type definitions (emission factors, prices) |

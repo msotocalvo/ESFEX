@@ -59,7 +59,6 @@ from esfex.visualization.panels.properties import PropertiesPanel
 from esfex.visualization.panels.toolbar import EditorToolbar
 from esfex.visualization.panels.fuel_route_form import FuelRouteForm
 from esfex.visualization.panels.fuel_storage_form import FuelStorageForm
-from esfex.visualization.panels.fuel_source_form import FuelSourceForm
 from esfex.visualization.panels.transformer_form import TransformerForm
 from esfex.visualization.panels.zone_form import ZoneForm
 from esfex.visualization.panels.fuel_form import FuelForm
@@ -497,7 +496,6 @@ class MainWindow(QMainWindow):
         self.properties_panel.register_form("zone", lambda: ZoneForm(_m), _wire_zone)
         self.properties_panel.register_form("fuel_entry", lambda: FuelEntryForm(_m), _wire_fuel_entry)
         self.properties_panel.register_form("transformer", lambda: TransformerForm(_m), _wire_transformer)
-        self.properties_panel.register_form("fuel_source", lambda: FuelSourceForm(_m))
         self.properties_panel.register_form("fuel_storage", lambda: FuelStorageForm(_m))
         self.properties_panel.register_form("fuel_route", lambda: FuelRouteForm(_m), _wire_fuel_route)
         self.properties_panel.register_form("fuel", lambda: FuelForm(_m), _wire_fuel)
@@ -1970,9 +1968,6 @@ class MainWindow(QMainWindow):
         m.generatorUpdated.connect(self._on_model_gen_updated)
         m.batteryUpdated.connect(self._on_model_bat_updated)
         m.lineUpdated.connect(self._on_model_line_updated)
-        m.fuelSourceAdded.connect(self._on_model_fuel_source_added)
-        m.fuelSourceRemoved.connect(self._on_model_fuel_source_removed)
-        m.fuelSourceUpdated.connect(self._on_model_fuel_source_updated)
         m.fuelStorageAdded.connect(self._on_model_fuel_storage_added)
         m.fuelStorageRemoved.connect(self._on_model_fuel_storage_removed)
         m.fuelStorageUpdated.connect(self._on_model_fuel_storage_updated)
@@ -4345,19 +4340,6 @@ class MainWindow(QMainWindow):
                 str(self._transformer_form._current_idx)
             )
 
-    def _on_model_fuel_source_added(self, source_id: str):
-        src = self.model.state.fuel_sources.get(source_id)
-        if src:
-            self.element_tree.add_fuel_source(source_id, src.name, src.unit)
-
-    def _on_model_fuel_source_removed(self, source_id: str):
-        self.element_tree.remove_fuel_source(source_id)
-
-    def _on_model_fuel_source_updated(self, source_id: str):
-        src = self.model.state.fuel_sources.get(source_id)
-        if src:
-            self.element_tree.update_fuel_source(source_id, src.name, src.unit)
-
     def _on_model_fuel_storage_added(self, storage_id: str):
         inst = self.model.state.fuel_storages.get(storage_id)
         if inst:
@@ -4782,8 +4764,6 @@ class MainWindow(QMainWindow):
             idx = int(element_id)
             self._reindex_line_endpoints("fuel_entry", idx)
             self.model.remove_fuel_entry(idx)
-        elif element_type == "fuel_source":
-            self.model.remove_fuel_source(element_id)
         elif element_type == "fuel_storage":
             self.model.remove_fuel_storage(element_id)
         elif element_type == "fuel_route":
@@ -4832,7 +4812,7 @@ class MainWindow(QMainWindow):
         # Within each group, index-based types stay in reverse order.
         _TYPE_ORDER = {
             "generator": 0, "battery": 0, "electrolyzer": 0,
-            "line": 0, "fuel_source": 0, "fuel_storage": 0,
+            "line": 0, "fuel_storage": 0,
             "fuel_route": 0, "fuel": 0, "technology": 0,
             "inter_system_link": 0, "geo_asset": 0,
             "investment_entry": 0,
@@ -4927,8 +4907,6 @@ class MainWindow(QMainWindow):
             return 0 <= int(eid) < len(s.acdc_converters)
         if etype == "freq_converter":
             return 0 <= int(eid) < len(s.freq_converters)
-        if etype == "fuel_source":
-            return eid in s.fuel_sources
         if etype == "fuel_storage":
             return eid in s.fuel_storages
         if etype == "fuel_route":
@@ -5076,22 +5054,6 @@ class MainWindow(QMainWindow):
                     self.model.stateLoaded.emit()
             except ValueError:
                 pass
-
-        elif element_type == "fuel_source":
-            orig = state.fuel_sources.get(element_id)
-            if not orig:
-                return
-            clone = deepcopy(orig)
-            counter = 0
-            new_id = f"{element_id}_copy"
-            while new_id in state.fuel_sources:
-                counter += 1
-                new_id = f"{element_id}_copy_{counter}"
-            clone.source_id = new_id
-            names = {fs.name for fs in state.fuel_sources.values()}
-            clone.name = self._unique_name(orig.name, names)
-            state.fuel_sources[new_id] = clone
-            self.model.fuelSourceAdded.emit(new_id)
 
         elif element_type == "fuel_storage":
             orig = state.fuel_storages.get(element_id)
@@ -5287,9 +5249,6 @@ class MainWindow(QMainWindow):
         "fuel_entry": {
             "name", "coordinate", "style",
         },
-        "fuel_source": {
-            "source_id", "name",
-        },
         "fuel_storage": {
             "storage_id", "name", "latitude", "longitude", "style",
         },
@@ -5340,8 +5299,6 @@ class MainWindow(QMainWindow):
                 return state.fuel_entry_points[int(element_id)]
             except (ValueError, IndexError):
                 return None
-        elif element_type == "fuel_source":
-            return state.fuel_sources.get(element_id)
         elif element_type == "fuel_storage":
             return state.fuel_storages.get(element_id)
         elif element_type == "fuel":
@@ -5418,8 +5375,6 @@ class MainWindow(QMainWindow):
             m.batteryUpdated.emit(element_id)
         elif element_type == "line":
             m.lineUpdated.emit(element_id)
-        elif element_type == "fuel_source":
-            m.fuelSourceUpdated.emit(element_id)
         elif element_type == "fuel_storage":
             m.fuelStorageUpdated.emit(element_id)
         elif element_type == "fuel_route":
@@ -5645,8 +5600,6 @@ class MainWindow(QMainWindow):
         for i, fe in enumerate(state.fuel_entry_points):
             fuels_str = ", ".join(fe.fuels) if fe.fuels else ""
             self.element_tree.add_fuel_entry(str(i), fe.name, fuels_str)
-        for src_id, src in state.fuel_sources.items():
-            self.element_tree.add_fuel_source(src_id, src.name, src.unit)
         for sid, fst in state.fuel_storages.items():
             fuels_str = ", ".join(fst.fuels) if fst.fuels else ""
             node_name = f"Node {fst.node}"
@@ -5799,9 +5752,6 @@ class MainWindow(QMainWindow):
             })
             self.element_tree.add_fuel_entry(str(i), fe.name, fuels_str)
 
-        # Fuel sources (system-level, no map marker)
-        for src_id, src in state.fuel_sources.items():
-            self.element_tree.add_fuel_source(src_id, src.name, src.unit)
 
         # Fuel storages
         for sid, fst in state.fuel_storages.items():

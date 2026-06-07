@@ -97,7 +97,7 @@
     "acdc_conv": "AC/DC変換器",
     "freq_conv": "周波数変換器",
     "electrolyzer": "電解槽",
-    "fuel_entry": "燃料入口",
+    "fuel_entry": "燃料ソース",
     "fuel_storage": "燃料貯蔵",
     "fuel_route": "燃料ルート",
     "validate": "検証",
@@ -122,7 +122,7 @@
     "acdc_conv": "AC/DC変換器を追加",
     "freq_conv": "周波数変換器を追加",
     "electrolyzer": "電解槽を追加",
-    "fuel_entry": "燃料入口を追加",
+    "fuel_entry": "燃料ソースを追加",
     "fuel_storage": "燃料貯蔵を追加",
     "fuel_route": "燃料ルートを追加",
     "validate": "検証",
@@ -173,8 +173,7 @@
     "lines": "送電線",
     "transformers": "変圧器",
     "zones": "開発ゾーン",
-    "fuel_entries": "燃料入口",
-    "fuel_sources": "燃料ソース",
+    "fuel_entries": "燃料ソース",
     "fuel_storages": "燃料貯蔵",
     "fuel_routes": "燃料ルート",
     "fuels": "燃料",
@@ -589,7 +588,12 @@
     "latitude": "緯度:",
     "longitude": "経度:",
     "max_import_rate": "最大輸入率 (単位/h):",
-    "per_fuel_params": "{fuel}のパラメータ"
+    "per_fuel_params": "{fuel}のパラメータ",
+    "import_cost": "輸入コスト ($/単位)",
+    "transport_transit_days_per_100km": "輸送 (日/100km)",
+    "disruption_start_hour": "途絶開始 (時)",
+    "disruption_end_hour": "途絶終了 (時)",
+    "disruption_availability": "途絶時可用率 (0-1)"
   },
   "fuel_storage_form": {
     "group_parameters": "貯蔵パラメータ",
@@ -626,28 +630,6 @@
     "price_base": "基準価格 ($/単位):",
     "price_growth": "価格上昇率 (frac/年):",
     "n_selected": "{n} 種の燃料を選択中"
-  },
-  "fuel_source_form": {
-    "group_basic": "基本属性",
-    "group_system": "システムパラメータ",
-    "group_per_node": "ノード別パラメータ",
-    "max_avail": "最大供給量",
-    "import_cost": "輸入コスト ($/単位)",
-    "storage_cap": "貯蔵容量",
-    "init_storage": "初期貯蔵",
-    "system_label": "システム: {name}",
-    "n_selected": "{n} 件の燃料ソースを選択中",
-    "unit": "単位:",
-    "min_storage_level": "最小貯蔵レベル (frac):",
-    "storage_invest_cost": "貯蔵投資コスト ($/単位):",
-    "transport_cost": "輸送コスト ($/単位/km):",
-    "transport_losses": "輸送損失 (frac):",
-    "transport_transit_days_per_100km": "輸送リードタイム (日/100km):",
-    "disruption_start_hour": "供給途絶 開始 (時):",
-    "disruption_end_hour": "供給途絶 終了 (時):",
-    "disruption_availability": "途絶時の可用率 (0-1):",
-    "max_storage_inv": "ノード当たり最大貯蔵投資 (単位):",
-    "max_transport_inv": "アーク当たり最大輸送投資 (単位):"
   },
   "technology_form": {
     "group_identity": "識別",
@@ -1185,7 +1167,10 @@
     "tool.run": "シミュレーション実行",
     "tool.sensitivity": "感度分析",
     "tool.results": "結果を表示",
-    "tool.risk": "リスク & レジリエンス"
+    "tool.risk": "リスク & レジリエンス",
+    "tool": {
+      "fuel_entry": "燃料ソース"
+    }
   },
   "validation": {
     "title": "ネットワーク検証",
@@ -1432,7 +1417,7 @@
     "confirm_split_title": "線路に接続",
     "confirm_split_msg": "'{element}' を '{line}' に接続しますか？",
     "failed_add_element": "要素の追加に失敗しました:\n{e}",
-    "failed_add_fuel_entry": "燃料入口の追加に失敗しました:\n{e}",
+    "failed_add_fuel_entry": "燃料ソースの追加に失敗しました:\n{e}",
     "parse_complete_title": "解析完了",
     "load_error_title": "読み込みエラー",
     "load_error_msg": "設定の読み込みに失敗しました:\n{e}",

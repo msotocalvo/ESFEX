@@ -4729,6 +4729,16 @@ class Orchestrator:
         # Aggregate per-fuel, per-node: max_availability, import_cost
         avail = {f: [0.0] * num_nodes for f in fuel_names}
         cost = {f: [0.0] * num_nodes for f in fuel_names}
+        # Per-fuel supply-stress params (transit lead time, disruption window).
+        # The solver source is per-fuel (one scalar each), so reconcile across
+        # the entry points feeding a fuel: take the longest transit and the
+        # most severe disruption (lowest availability) window.
+        transit = {f: 0.0 for f in fuel_names}
+        disrupt = {f: {"start": 0, "end": 0, "avail": 1.0} for f in fuel_names}
+
+        def _fp_attr(fp, key, default):
+            return (fp.get(key, default) if isinstance(fp, dict)
+                    else getattr(fp, key, default))
 
         for fe in system_config.fuel_entry_points:
             node = fe.node if fe.node < num_nodes else 0
@@ -4737,12 +4747,8 @@ class Orchestrator:
                 if fuel not in fuel_names:
                     continue
                 fp = fe.fuel_params.get(fuel, {})
-                if isinstance(fp, dict):
-                    rate = fp.get('max_import_rate', fe.max_import_rate)
-                    ic = fp.get('import_cost', fe.import_cost)
-                else:
-                    rate = getattr(fp, 'max_import_rate', fe.max_import_rate)
-                    ic = getattr(fp, 'import_cost', fe.import_cost)
+                rate = _fp_attr(fp, 'max_import_rate', fe.max_import_rate)
+                ic = _fp_attr(fp, 'import_cost', fe.import_cost)
                 # max_import_rate is in units/hour, convert to units/year for max_availability
                 avail[fuel][node] += float(rate) * 8760.0
                 # Take the cheapest cost when multiple entries feed the same node
@@ -4750,6 +4756,15 @@ class Orchestrator:
                     cost[fuel][node] = float(ic)
                 else:
                     cost[fuel][node] = min(cost[fuel][node], float(ic))
+                # Supply stress: longest transit, most severe disruption window
+                transit[fuel] = max(
+                    transit[fuel],
+                    float(_fp_attr(fp, 'transport_transit_days_per_100km', 0.0)))
+                d_start = int(_fp_attr(fp, 'disruption_start_hour', 0))
+                d_end = int(_fp_attr(fp, 'disruption_end_hour', 0))
+                d_avail = float(_fp_attr(fp, 'disruption_availability', 1.0))
+                if d_end > d_start and d_avail < disrupt[fuel]["avail"]:
+                    disrupt[fuel] = {"start": d_start, "end": d_end, "avail": d_avail}
 
         # Aggregate per-fuel, per-node storage from fuel_infrastructure.storage_facilities
         stor_cap = {f: [0.0] * num_nodes for f in fuel_names}
@@ -4804,6 +4819,10 @@ class Orchestrator:
                 'storage_investment_cost': 0.0,
                 'transport_cost': 0.0,
                 'transport_losses': 0.0,
+                'transport_transit_days_per_100km': transit[fuel],
+                'disruption_start_hour': disrupt[fuel]["start"],
+                'disruption_end_hour': disrupt[fuel]["end"],
+                'disruption_availability': disrupt[fuel]["avail"],
                 'max_storage_investment_per_node': 0.0,
                 'max_transport_investment_per_arc': 0.0,
             }

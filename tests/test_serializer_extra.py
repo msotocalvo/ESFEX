@@ -421,8 +421,7 @@ def test_rich_config_to_gui_state_components():
     assert fe.fuels == ["Gas", "Diesel"]
     assert fe.fuel_params["Gas"].max_import_rate == 1000.0
 
-    # primary energy sources / fuel routes / storages
-    assert "GasField" in st.fuel_sources
+    # fuel routes / storages
     assert len(st.fuel_transport_routes) == 1
     assert st.fuel_transport_routes[0].fuels == ["Gas"]
     assert "store1" in st.fuel_storages

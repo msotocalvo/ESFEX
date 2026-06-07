@@ -378,10 +378,14 @@ class GuiDevelopmentZone:
 
 @dataclass
 class FuelEntryParams:
-    """Per-fuel import parameters for a fuel entry point."""
+    """Per-fuel import parameters for a fuel source (entry point)."""
 
     max_import_rate: float = 0.0
     import_cost: float = 0.0
+    transport_transit_days_per_100km: float = 0.0  # source->tank lead time
+    disruption_start_hour: int = 0                  # supply-disruption window start
+    disruption_end_hour: int = 0                    # supply-disruption window end
+    disruption_availability: float = 1.0            # availability during the window (0-1)
 
 
 @dataclass
@@ -392,29 +396,6 @@ class GuiFuelEntryPoint:
     coordinate: GeoPoint = field(default_factory=lambda: GeoPoint(0, 0))
     fuel_params: dict[str, FuelEntryParams] = field(default_factory=dict)
     style: VisualStyle = field(default_factory=VisualStyle)
-
-
-@dataclass
-class GuiFuelSource:
-    """System-level primary energy source configuration."""
-
-    source_id: str                   # key, e.g. "Oil", "Gas"
-    name: str
-    unit: str                        # e.g. "kTon", "MMBTU"
-    max_availability: list[float] = field(default_factory=list)
-    import_cost: list[float] = field(default_factory=list)
-    storage_capacity: list[float] = field(default_factory=list)
-    initial_storage_level: list[float] = field(default_factory=list)
-    min_storage_level: float = 0.1
-    storage_investment_cost: float = 0.0
-    transport_cost: float = 0.0
-    transport_losses: float = 0.0
-    transport_transit_days_per_100km: float = 0.0  # source->tank lead time
-    disruption_start_hour: int = 0                  # supply-disruption window start
-    disruption_end_hour: int = 0                    # supply-disruption window end
-    disruption_availability: float = 1.0            # availability during the window (0-1)
-    max_storage_investment_per_node: float = 0.0
-    max_transport_investment_per_arc: float = 0.0
 
 
 @dataclass
@@ -986,7 +967,6 @@ class GuiSystemState:
     freq_converters: list[GuiFrequencyConverter] = field(default_factory=list)
     development_zones: list[GuiDevelopmentZone] = field(default_factory=list)
     fuel_entry_points: list[GuiFuelEntryPoint] = field(default_factory=list)
-    fuel_sources: dict[str, GuiFuelSource] = field(default_factory=dict)
     fuel_storages: dict[str, GuiFuelStorage] = field(default_factory=dict)
     fuel_transport_routes: list[GuiFuelTransportRoute] = field(default_factory=list)
     demand_path: Optional[str] = None
@@ -1089,11 +1069,6 @@ class GuiModel(QObject):
     # Frequency converter signals
     freqConverterAdded = Signal(int)
     freqConverterRemoved = Signal(int)
-
-    # Fuel source signals
-    fuelSourceAdded = Signal(str)
-    fuelSourceRemoved = Signal(str)
-    fuelSourceUpdated = Signal(str)
 
     # Fuel storage signals
     fuelStorageAdded = Signal(str)
@@ -2306,42 +2281,6 @@ class GuiModel(QObject):
             for k, v in kwargs.items():
                 if hasattr(conv, k):
                     setattr(conv, k, v)
-
-    # ------------------------------------------------------------------
-    # Fuel source operations
-    # ------------------------------------------------------------------
-
-    def add_fuel_source(self, source_id: str, name: str, unit: str,
-                        num_nodes: int = 0, **kwargs) -> str:
-        self.checkpoint()
-        source = GuiFuelSource(
-            source_id=source_id, name=name, unit=unit,
-            max_availability=[0.0] * num_nodes,
-            import_cost=[0.0] * num_nodes,
-            storage_capacity=[0.0] * num_nodes,
-            initial_storage_level=[0.5] * num_nodes,
-        )
-        for k, v in kwargs.items():
-            if hasattr(source, k):
-                setattr(source, k, v)
-        self.state.fuel_sources[source_id] = source
-        self.fuelSourceAdded.emit(source_id)
-        return source_id
-
-    def remove_fuel_source(self, source_id: str):
-        self.checkpoint()
-        if source_id in self.state.fuel_sources:
-            del self.state.fuel_sources[source_id]
-            self.fuelSourceRemoved.emit(source_id)
-
-    def update_fuel_source(self, source_id: str, **kwargs):
-        self.checkpoint()
-        if source_id in self.state.fuel_sources:
-            src = self.state.fuel_sources[source_id]
-            for k, v in kwargs.items():
-                if hasattr(src, k):
-                    setattr(src, k, v)
-            self.fuelSourceUpdated.emit(source_id)
 
     # ------------------------------------------------------------------
     # Fuel storage operations

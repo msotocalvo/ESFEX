@@ -36,7 +36,6 @@ from esfex.visualization.data.gui_model import (
     FuelStorageParams,
     GuiFuel,
     GuiFuelEntryPoint,
-    GuiFuelSource,
     GuiFuelStorage,
     GuiFuelTransportRoute,
     GuiGeneratorInstance,
@@ -908,10 +907,21 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
         # Per-fuel parameters (new format) or fallback from global values (old format)
         raw_fp = getattr(fe, 'fuel_params', None)
         if isinstance(raw_fp, dict) and raw_fp:
+            def _fp_get(fdata, key, default):
+                return (fdata.get(key, default) if isinstance(fdata, dict)
+                        else getattr(fdata, key, default))
             fuel_params = {
                 fname: FuelEntryParams(
-                    max_import_rate=fdata.get("max_import_rate", 0.0) if isinstance(fdata, dict) else getattr(fdata, 'max_import_rate', 0.0),
-                    import_cost=fdata.get("import_cost", 0.0) if isinstance(fdata, dict) else getattr(fdata, 'import_cost', 0.0),
+                    max_import_rate=_fp_get(fdata, "max_import_rate", 0.0),
+                    import_cost=_fp_get(fdata, "import_cost", 0.0),
+                    transport_transit_days_per_100km=_fp_get(
+                        fdata, "transport_transit_days_per_100km", 0.0),
+                    disruption_start_hour=int(_fp_get(
+                        fdata, "disruption_start_hour", 0)),
+                    disruption_end_hour=int(_fp_get(
+                        fdata, "disruption_end_hour", 0)),
+                    disruption_availability=_fp_get(
+                        fdata, "disruption_availability", 1.0),
                 )
                 for fname, fdata in raw_fp.items()
             }
@@ -926,32 +936,6 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
             coordinate=GeoPoint(fe.coordinate.latitude, fe.coordinate.longitude, fe.name),
             fuel_params=fuel_params,
         ))
-
-    # Primary energy sources
-    fuel_sources: dict[str, GuiFuelSource] = {}
-    if hasattr(sys, 'primary_energy_sources') and sys.primary_energy_sources:
-        for src_key, src_cfg in sys.primary_energy_sources.items():
-            fuel_sources[src_key] = GuiFuelSource(
-                source_id=src_key,
-                name=src_cfg.name,
-                unit=src_cfg.unit,
-                max_availability=list(src_cfg.max_availability),
-                import_cost=list(src_cfg.import_cost),
-                storage_capacity=list(src_cfg.storage_capacity),
-                initial_storage_level=list(src_cfg.initial_storage_level),
-                min_storage_level=src_cfg.min_storage_level,
-                storage_investment_cost=src_cfg.storage_investment_cost,
-                transport_cost=src_cfg.transport_cost,
-                transport_losses=src_cfg.transport_losses,
-                transport_transit_days_per_100km=getattr(
-                    src_cfg, "transport_transit_days_per_100km", 0.0),
-                disruption_start_hour=getattr(src_cfg, "disruption_start_hour", 0),
-                disruption_end_hour=getattr(src_cfg, "disruption_end_hour", 0),
-                disruption_availability=getattr(
-                    src_cfg, "disruption_availability", 1.0),
-                max_storage_investment_per_node=src_cfg.max_storage_investment_per_node,
-                max_transport_investment_per_arc=src_cfg.max_transport_investment_per_arc,
-            )
 
     # Fuel transport routes
     fuel_routes: list[GuiFuelTransportRoute] = []
@@ -1913,7 +1897,6 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
         freq_converters=freq_converters,
         development_zones=zones,
         fuel_entry_points=fuel_entries,
-        fuel_sources=fuel_sources,
         fuel_storages=fuel_storages,
         fuel_transport_routes=fuel_routes,
         demand_path=sys.demand_path,
@@ -3074,36 +3057,16 @@ def _apply_gui_state_to_dict(state: GuiSystemState, sys_dict: dict):
                     fname: {
                         "max_import_rate": fp.max_import_rate,
                         "import_cost": fp.import_cost,
+                        "transport_transit_days_per_100km": fp.transport_transit_days_per_100km,
+                        "disruption_start_hour": fp.disruption_start_hour,
+                        "disruption_end_hour": fp.disruption_end_hour,
+                        "disruption_availability": fp.disruption_availability,
                     }
                     for fname, fp in fe.fuel_params.items()
                 },
             }
             for fe in state.fuel_entry_points
         ]
-
-    # Primary energy sources
-    if state.fuel_sources:
-        sys_dict["primary_energy_sources"] = {
-            src_id: {
-                "name": src.name,
-                "unit": src.unit,
-                "max_availability": src.max_availability,
-                "import_cost": src.import_cost,
-                "storage_capacity": src.storage_capacity,
-                "initial_storage_level": src.initial_storage_level,
-                "min_storage_level": src.min_storage_level,
-                "storage_investment_cost": src.storage_investment_cost,
-                "transport_cost": src.transport_cost,
-                "transport_losses": src.transport_losses,
-                "transport_transit_days_per_100km": src.transport_transit_days_per_100km,
-                "disruption_start_hour": src.disruption_start_hour,
-                "disruption_end_hour": src.disruption_end_hour,
-                "disruption_availability": src.disruption_availability,
-                "max_storage_investment_per_node": src.max_storage_investment_per_node,
-                "max_transport_investment_per_arc": src.max_transport_investment_per_arc,
-            }
-            for src_id, src in state.fuel_sources.items()
-        }
 
     # Fuel transport routes
     if state.fuel_transport_routes:

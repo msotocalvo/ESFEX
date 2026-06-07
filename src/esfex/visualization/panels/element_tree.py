@@ -24,7 +24,7 @@ from esfex.visualization.theme import get_tree_category_color
 # Ordered list of category keys (labels resolved lazily via tr()).
 _CATEGORY_KEYS = [
     "nodes", "generators", "batteries", "lines", "transformers",
-    "zones", "fuel_entries", "fuel_sources", "fuel_storages",
+    "zones", "fuel_entries", "fuel_storages",
     "fuel_routes", "fuels", "electrolyzers", "ev_config",
     "rooftop_solar", "buses", "acdc_converters", "freq_converters",
     "technologies", "investment_portfolio", "risk_scenarios",
@@ -44,7 +44,6 @@ _ELEMENT_TYPE_TO_CATEGORY = {
     "transformer": "transformers",
     "zone": "zones",
     "fuel_entry": "fuel_entries",
-    "fuel_source": "fuel_sources",
     "fuel_storage": "fuel_storages",
     "fuel_route": "fuel_routes",
     "fuel": "fuels",
@@ -107,7 +106,7 @@ class ElementTreePanel(QWidget):
     # Element types that support deletion from the tree
     _DELETABLE_TYPES = {
         "node", "generator", "battery", "line", "transformer", "zone",
-        "bus", "fuel_entry", "fuel_source", "fuel_storage", "fuel_route", "fuel",
+        "bus", "fuel_entry", "fuel_storage", "fuel_route", "fuel",
         "electrolyzer", "acdc_converter", "freq_converter",
         "technology", "investment_entry", "inter_system_link", "geo_asset",
     }
@@ -115,7 +114,7 @@ class ElementTreePanel(QWidget):
     # Element types that support duplication
     _DUPLICABLE_TYPES = {
         "node", "generator", "battery", "line", "transformer",
-        "bus", "fuel_entry", "fuel_source", "fuel_storage", "fuel",
+        "bus", "fuel_entry", "fuel_storage", "fuel",
         "electrolyzer", "acdc_converter", "freq_converter",
         "technology", "investment_entry",
     }
@@ -123,7 +122,7 @@ class ElementTreePanel(QWidget):
     # Element types that support copy/paste of attributes
     _COPYABLE_TYPES = {
         "generator", "battery", "line", "transformer",
-        "bus", "fuel_entry", "fuel_source", "fuel_storage", "fuel",
+        "bus", "fuel_entry", "fuel_storage", "fuel",
         "electrolyzer", "acdc_converter", "freq_converter",
         "technology", "investment_entry",
     }
@@ -501,27 +500,6 @@ class ElementTreePanel(QWidget):
         if root is None:
             return
         self._update_child(root, "transformer", tr_id, name, info)
-
-    def add_fuel_source(self, source_id: str, name: str, info: str = ""):
-        root = self._get_root("fuel_sources")
-        if root is None:
-            return
-        item = QTreeWidgetItem(root, [name, info])
-        item.setData(0, 100, ("fuel_source", source_id))
-        self._update_count(root)
-
-    def remove_fuel_source(self, source_id: str):
-        root = self._get_root("fuel_sources")
-        if root is None:
-            return
-        self._remove_child(root, "fuel_source", source_id)
-        self._update_count(root)
-
-    def update_fuel_source(self, source_id: str, name: str, info: str = ""):
-        root = self._get_root("fuel_sources")
-        if root is None:
-            return
-        self._update_child(root, "fuel_source", source_id, name, info)
 
     def add_fuel_storage(self, storage_id: str, name: str, info: str = ""):
         root = self._get_root("fuel_storages")

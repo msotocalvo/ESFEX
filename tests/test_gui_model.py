@@ -56,7 +56,6 @@ from esfex.visualization.data.gui_model import (  # noqa: E402
     GuiElectrolyzerInstance,
     GuiFuel,
     GuiFuelEntryPoint,
-    GuiFuelSource,
     GuiFuelStorage,
     GuiFuelTransportRoute,
     GuiFrequencyConverter,
@@ -592,40 +591,6 @@ class TestGuiFuelEntryPoint:
         fe = GuiFuelEntryPoint(name="Gas Terminal", fuels=["LNG", "Diesel"])
         assert "LNG" in fe.fuels
         assert len(fe.fuels) == 2
-
-
-# ======================================================================
-# GuiFuelSource
-# ======================================================================
-
-
-class TestGuiFuelSource:
-    def test_creation_and_defaults(self):
-        fs = GuiFuelSource(source_id="Oil", name="Crude Oil", unit="kTon")
-        assert fs.source_id == "Oil"
-        assert fs.name == "Crude Oil"
-        assert fs.unit == "kTon"
-        assert fs.max_availability == []
-        assert fs.import_cost == []
-        assert fs.storage_capacity == []
-        assert fs.initial_storage_level == []
-        assert fs.min_storage_level == 0.1
-        assert fs.storage_investment_cost == 0.0
-        assert fs.transport_cost == 0.0
-        assert fs.transport_losses == 0.0
-        assert fs.max_storage_investment_per_node == 0.0
-        assert fs.max_transport_investment_per_arc == 0.0
-
-    def test_per_node_arrays(self):
-        fs = GuiFuelSource(
-            source_id="Gas",
-            name="Natural Gas",
-            unit="MMBTU",
-            max_availability=[100.0, 200.0],
-            import_cost=[5.0, 6.0],
-        )
-        assert len(fs.max_availability) == 2
-        assert fs.import_cost[1] == 6.0
 
 
 # ======================================================================
@@ -1297,7 +1262,6 @@ class TestGuiSystemState:
         assert s.freq_converters == []
         assert s.development_zones == []
         assert s.fuel_entry_points == []
-        assert s.fuel_sources == {}
         assert s.fuel_storages == {}
         assert s.fuel_transport_routes == []
         assert s.demand_path is None

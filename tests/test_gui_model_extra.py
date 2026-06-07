@@ -945,21 +945,6 @@ class TestFreqConverterOps:
 # ======================================================================
 
 
-class TestFuelSource:
-    def test_add_update_remove(self, model):
-        sid = model.add_fuel_source("Gas", "Natural Gas", "MMBTU", num_nodes=3,
-                                    transport_cost=2.0, junk=1)
-        src = model.state.fuel_sources[sid]
-        assert len(src.max_availability) == 3
-        assert src.transport_cost == 2.0
-        model.update_fuel_source(sid, transport_cost=5.0, nope=1)
-        assert model.state.fuel_sources[sid].transport_cost == 5.0
-        model.update_fuel_source("missing", transport_cost=1.0)
-        model.remove_fuel_source(sid)
-        assert sid not in model.state.fuel_sources
-        model.remove_fuel_source("missing")
-
-
 class TestFuelStorage:
     def test_add_auto_id_with_fuel(self, model):
         sid = model.add_fuel_storage("Tank", fuel="Gas", node=0)
