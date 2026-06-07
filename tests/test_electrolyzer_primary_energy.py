@@ -550,6 +550,66 @@ def test_source_disruption_cuts_supply():
     assert obj_disrupted > obj_normal + 1.0
 
 
+@pytest.mark.julia
+def test_tank_min_storage_floor_binds():
+    """A tank safety floor preserves an operational reserve (#13, phase D).
+
+    Differential: one tank-only node (no supply) starts 60% full and faces
+    demand that draws it down. With no floor it can be emptied to meet demand;
+    a 40% floor keeps that reserve untouched, so more demand goes unmet and the
+    penalised shortfall raises the objective.
+    """
+    from esfex.bridge.julia_setup import get_esfex_module, get_julia
+    from esfex.bridge.converters import py_to_julia_matrix, py_to_julia_vector
+
+    jl = get_julia()
+    ESFEX = get_esfex_module()
+
+    def solve(min_floor):
+        fuel = ESFEX.FuelConfig(
+            "Gas", 10.0, 0.0, 10.0, 0.0,
+            py_to_julia_vector([0.0]),       # no supply: tank only
+            py_to_julia_vector([100.0]),     # tank capacity
+            py_to_julia_vector([0.6]),       # starts 60% full
+            min_floor,                       # the safety floor under test
+            py_to_julia_vector([0.0]), 0.0, 0.0, 0.0, 0, 0, 1.0)
+        jl._f = fuel
+        fuels = jl.seval("FuelConfig[_f]")
+        infra = ESFEX.FuelInfrastructureConfig(
+            1000.0, 10.0, 0.5, 50.0, 1.0, 1.0, 20.0, 30.0, -1.0)
+        jl._i = infra
+        infra_dict = jl.seval(
+            'Dict{String,FuelInfrastructureConfig}("Gas"=>_i)')
+        ne = ESFEX.NonElectricDemandConfig(
+            "Industrial", "Gas", py_to_julia_vector([200000.0]),
+            0.0, py_to_julia_vector([1 / 12] * 12))
+        jl._n = ne
+        ne_demands = jl.seval("NonElectricDemandConfig[_n]")
+        inp = ESFEX.PrimaryEnergyInput(
+            2025, 2025, 1, 24, fuels, infra_dict, ne_demands,
+            py_to_julia_matrix(np.array([[0.0]])),
+            jl.seval("Dict{Int,Tuple{String,Float64,Float64,Float64}}()"),
+            24, 24, 0.05, 1000.0, 1.0, "development",
+            jl.seval("Dict{String,Any}()"), jl.seval("nothing"), False,
+            jl.seval("nothing"), jl.seval("Dict{Int,Vector{Float64}}()"),
+            jl.seval("nothing"))
+        m = jl.seval("using JuMP, HiGHS; Model(HiGHS.Optimizer)")
+        jl._m = m
+        jl._in = inp
+        jl.seval("""
+        vars, temporal, prices = create_primary_energy_model(_m, _in)
+        ct = get_primary_energy_objective_terms(vars, _in, temporal, prices)
+        @objective(_m, Min, sum(values(ct)))
+        set_silent(_m); optimize!(_m)
+        """)
+        assert "OPTIMAL" in str(jl.seval("termination_status(_m)"))
+        return float(jl.seval("objective_value(_m)"))
+
+    obj_no_floor = solve(0.0)
+    obj_floor = solve(0.4)  # keep a 40% operational reserve
+    assert obj_floor > obj_no_floor + 1.0
+
+
 # =============================================================================
 # Integration Tests
 # =============================================================================

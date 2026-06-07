@@ -187,6 +187,16 @@ V^{start}_{f,n,p} \leq \bar{V}_{f,n} + C^{cumul,stor}_{f,n} + I^{stor}_{f,n,ip} 
 \tag{PE-5b}
 \]
 
+**Tank safety floor (operational reserve).** The plant tank cannot be drawn below a configured minimum level \(\underline{v}_f \in [0,1]\) (a fraction of capacity) — an operational reserve that must be held back. The floor applies to the hourly level and to the period boundaries:
+
+\[
+V^{hr}_{f,n,t} \ge \underline{v}_f \cdot \bar{V}_{f,n}, \qquad
+V^{end}_{f,n,p} \ge \underline{v}_f \cdot \bar{V}_{f,n}
+\tag{PE-5c}
+\]
+
+With \(\underline{v}_f = 0\) the tank may be emptied. A positive floor reserves fuel even under stress: combined with a source disruption (PE-1b) and a transport lead time (PE-3b), the reserve cannot be tapped to cover the gap, so the penalised shortfall — and any consequent generation curtailment — appears sooner.
+
 **Storage investment limits** prevent unbounded expansion:
 
 \[
