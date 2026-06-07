@@ -2064,6 +2064,56 @@ class TestDeletedSystemPruning:
         assert set(reloaded) == {"TestSystem"}
 
 
+class TestFuelSupplyStressRoundTrip:
+    """The fuel-supply-stress params (#13) survive config<->GUI<->YAML and reach
+    the bridge (i.e. land in the serialized source dict)."""
+
+    def test_source_stress_params_round_trip(self, tmp_path):
+        from esfex.config.schema import PrimaryEnergySourceConfig
+
+        config = _make_esfex_config()
+        sysname = next(iter(config.systems))
+        config.systems[sysname].primary_energy_sources = {
+            "Gas": PrimaryEnergySourceConfig(
+                name="Gas", unit="kTon",
+                max_availability=[100.0, 100.0], import_cost=[5.0, 5.0],
+                storage_capacity=[100.0, 100.0],
+                initial_storage_level=[0.5, 0.5],
+                min_storage_level=0.25, storage_investment_cost=0.0,
+                transport_cost=0.1, transport_losses=0.01,
+                max_storage_investment_per_node=0.0,
+                max_transport_investment_per_arc=0.0,
+                transport_transit_days_per_100km=2.0,
+                disruption_start_hour=100, disruption_end_hour=200,
+                disruption_availability=0.3),
+        }
+
+        # config -> GUI carries every field.
+        states = config_to_gui_states(config)
+        src = states[sysname].fuel_sources["Gas"]
+        assert src.transport_transit_days_per_100km == 2.0
+        assert src.disruption_start_hour == 100
+        assert src.disruption_end_hour == 200
+        assert src.disruption_availability == 0.3
+        assert src.min_storage_level == 0.25
+
+        # GUI -> YAML: the serialized source dict (what the bridge reads) has them.
+        out = tmp_path / "out.yaml"
+        gui_state_to_yaml(states, config, out)
+        data = yaml.safe_load(out.read_text())
+        sd = data["systems"][sysname]["primary_energy_sources"]["Gas"]
+        assert sd["transport_transit_days_per_100km"] == 2.0
+        assert sd["disruption_start_hour"] == 100
+        assert sd["disruption_end_hour"] == 200
+        assert sd["disruption_availability"] == 0.3
+        assert sd["min_storage_level"] == 0.25
+
+        # ...and they survive a reload.
+        src2 = config_to_gui_states(ESFEXConfig(**data))[sysname].fuel_sources["Gas"]
+        assert src2.transport_transit_days_per_100km == 2.0
+        assert src2.disruption_availability == 0.3
+
+
 # =====================================================================
 # Cost curve serialization helpers
 # =====================================================================
