@@ -138,8 +138,15 @@ class MapWidget(QWebEngineView):
         this during the initial load window would otherwise throw
         ReferenceError, which would be logged by Qt's JS error sink.
         """
+        # Guard on the *method*, not just on ``map`` being truthy: a
+        # browser exposes the ``<div id="map">`` element as the global
+        # ``map`` until map_controller.js has run and shadowed it with the
+        # Leaflet instance. During that window ``typeof map !== 'undefined'``
+        # is true but ``map.invalidateSize`` is undefined → the
+        # "map.invalidateSize is not a function" TypeError in the JS sink.
         self._run_js(
-            "if (typeof map !== 'undefined' && map) "
+            "if (typeof map !== 'undefined' && map && "
+            "typeof map.invalidateSize === 'function') "
             "map.invalidateSize({animate: false});"
         )
 

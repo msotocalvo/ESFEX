@@ -388,7 +388,8 @@ def studio(
     except ImportError:
         console.print(
             "[red]PySide6 is required for the Studio.[/red]\n"
-            "Install it with: pip install 'esfex[gui]'"
+            "It ships with esfex; reinstall with: "
+            "pip install --upgrade --force-reinstall esfex"
         )
         raise typer.Exit(code=1)
 
@@ -727,7 +728,10 @@ def train_demand_model(
             )
         except ImportError as exc:
             console.print(f"\n[red]Missing dependency:[/red] {exc}")
-            console.print("Install with: pip install 'esfex[ml]'")
+            console.print(
+                "xgboost ships with esfex; reinstall with: "
+                "pip install --upgrade --force-reinstall esfex"
+            )
             raise typer.Exit(code=1)
         except Exception as exc:
             console.print(f"\n[red]Training failed:[/red] {exc}")

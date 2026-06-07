@@ -19,6 +19,10 @@ from types import ModuleType
 
 import pytest
 
+
+class _ReqExc(Exception):
+    """Stand-in for requests.RequestException (narrow, unlike bare Exception)."""
+
 # ---------------------------------------------------------------------------
 # Stub PySide6 + i18n only if a working Qt is absent.
 # ---------------------------------------------------------------------------
@@ -1006,3 +1010,371 @@ class TestBuildGridFromFeatures:
         gmb.build_grid_from_features(model, feats, target_node=1)
         inst = next(iter(state.generators.values()))
         assert inst.node == 1
+
+
+class TestOSMFetcherTiling:
+    """OSM fetcher splits large regions into tiles and treats a server-side
+    timeout (HTTP 200 + 'runtime error' remark) as a retryable failure rather
+    than a silently empty success. Regression for the all-of-Japan Grid Builder
+    timeout."""
+
+    def _fetcher(self, bounds):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            OSMGridFetcher,
+        )
+        return OSMGridFetcher(bounds)
+
+    def test_large_region_tiled_and_covers_bbox(self):
+        f = self._fetcher((24.0, 122.9, 45.6, 145.8))  # Japan
+        tiles = f._tile_bboxes()
+        assert len(tiles) > 1
+        # every tile within the max span
+        assert all(
+            (t[2] - t[0]) <= 5.0 + 1e-9 and (t[3] - t[1]) <= 5.0 + 1e-9
+            for t in tiles
+        )
+        # union of tiles equals the original bbox
+        assert min(t[0] for t in tiles) == pytest.approx(24.0)
+        assert min(t[1] for t in tiles) == pytest.approx(122.9)
+        assert max(t[2] for t in tiles) == pytest.approx(45.6)
+        assert max(t[3] for t in tiles) == pytest.approx(145.8)
+
+    def test_build_query_contains_bbox_and_types(self):
+        f = self._fetcher((0.0, 0.0, 1.0, 1.0))
+        f.element_types = {"line", "substation"}
+        q = f._build_query("0,0,1,1")
+        assert "[out:json][timeout:180]" in q
+        assert '"power"="line"' in q
+        assert '"power"="substation"' in q
+        assert "(0,0,1,1)" in q
+
+    def test_post_query_runtime_error_is_not_silent_success(self):
+        f = self._fetcher((0.0, 0.0, 1.0, 1.0))
+
+        class _Resp:
+            status_code = 200
+            content = b'{"elements": [], "remark": "runtime error: Query timed out"}'
+            text = ""
+
+        class _FakeRequests:
+            RequestException = _ReqExc
+
+            def post(self, *a, **kw):
+                return _Resp()
+
+        class _FakeApi:
+            def parse_json(self, content):
+                raise AssertionError("parse_json called on a timeout remark")
+
+        class _FakeTime:
+            def sleep(self, *_):
+                pass
+
+        with pytest.raises(RuntimeError, match="(?i)overpass"):
+            f._post_query(_FakeApi(), {}, "q", _FakeTime(), _FakeRequests())
+
+    def test_post_query_clean_body_parses(self):
+        f = self._fetcher((0.0, 0.0, 1.0, 1.0))
+        sentinel = object()
+
+        class _Resp:
+            status_code = 200
+            content = b'{"elements": []}'
+            text = ""
+
+        class _FakeRequests:
+            RequestException = _ReqExc
+
+            def post(self, *a, **kw):
+                return _Resp()
+
+        class _FakeApi:
+            def parse_json(self, content):
+                return sentinel
+
+        class _FakeTime:
+            def sleep(self, *_):
+                pass
+
+        out = f._post_query(_FakeApi(), {}, "q", _FakeTime(), _FakeRequests())
+        assert out is sentinel
+
+
+class TestOSMFetcher400Handling:
+    """HTTP 400 from Overpass covers both genuine query-syntax errors (fatal)
+    and transient dispatcher/load timeouts (retryable). Regression for the
+    Grid Builder raising on a transient 400 mid-fetch."""
+
+    def _fetcher(self):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            OSMGridFetcher,
+        )
+        return OSMGridFetcher((0.0, 0.0, 1.0, 1.0))
+
+    def _make_requests(self, body: bytes, status: int = 400):
+        class _Resp:
+            status_code = status
+            content = body
+            text = body.decode("utf-8", "replace")
+
+        class _FakeRequests:
+            RequestException = _ReqExc
+            calls = 0
+
+            def post(self, *a, **kw):
+                _FakeRequests.calls += 1
+                return _Resp()
+
+        return _FakeRequests()
+
+    class _FakeTime:
+        def sleep(self, *_):
+            pass
+
+    class _NoParseApi:
+        def parse_json(self, content):
+            raise AssertionError("parse_json must not run on a 400")
+
+    def test_400_is_retried_not_fatal(self):
+        # Our Overpass query is machine-generated and static, so an
+        # intermittent 400 means the server is busy, not a syntax error.
+        # It must be retried (across mirrors), not raised on the first hit.
+        f = self._fetcher()
+        req = self._make_requests(
+            b'<html><body><p><strong style="color:#FF0000">Error</strong>: '
+            b'runtime error: Dispatcher_Client::request_read_and_idx::timeout. '
+            b'The server is probably too busy.</p></body></html>'
+        )
+        with pytest.raises(RuntimeError, match="(?i)overpass"):
+            f._post_query(self._NoParseApi(), {}, "q", self._FakeTime(), req)
+        assert req.calls > 1  # retried, not fatal
+
+    def test_overload_400_is_retried_then_raised(self):
+        f = self._fetcher()
+        req = self._make_requests(
+            b'<html>Error: Dispatcher_Client::request_read_and_idx::timeout. '
+            b'Probably the server is overloaded.</html>'
+        )
+        with pytest.raises(RuntimeError, match="(?i)overpass"):
+            f._post_query(self._NoParseApi(), {}, "q", self._FakeTime(), req)
+        # Retryable => multiple POST attempts before giving up.
+        assert req.calls > 1
+
+
+class TestOSMFeatureReduction:
+    """Dense regions (e.g. Japan) map hundreds of thousands of rooftop PV
+    panels that swamped the GUI and triggered an O(n^2) dedup freeze. They are
+    dropped at filter time; dedup is spatially bucketed; the total is capped."""
+
+    def _fetcher(self, **kw):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            OSMGridFetcher,
+        )
+        return OSMGridFetcher((34.0, 138.0, 37.0, 141.0), **kw)
+
+    def _gf(self, **kw):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            GridFeature,
+        )
+        base = dict(source="osm", name="x", latitude=35.0, longitude=139.0)
+        base.update(kw)
+        return GridFeature(**base)
+
+    def test_rooftop_pv_dropped_real_kept(self):
+        f = self._fetcher(min_voltage_kv=110.0)
+        feats = [
+            # rooftop PV: power=generator, solar, no capacity -> dropped
+            self._gf(feature_type="generator", fuel="Solar", capacity_mw=0.0,
+                     raw_tags={"power": "generator", "generator:source": "solar"}),
+            # utility solar plant -> kept
+            self._gf(feature_type="generator", name="farm", fuel="Solar",
+                     capacity_mw=40.0,
+                     raw_tags={"power": "plant", "plant:source": "solar"}),
+            # capacity-tagged solar generator -> kept
+            self._gf(feature_type="generator", name="sized", fuel="Solar",
+                     capacity_mw=10.0,
+                     raw_tags={"power": "generator", "generator:source": "solar"}),
+            # thermal generator with no capacity (e.g. Cuba) -> kept (not solar)
+            self._gf(feature_type="generator", name="thermal", fuel="Gas",
+                     capacity_mw=0.0,
+                     raw_tags={"power": "generator", "generator:source": "gas"}),
+            self._gf(feature_type="substation", name="ss", voltage_kv=275.0),
+        ]
+        out = self._fetcher(min_voltage_kv=110.0)._apply_filters(feats)
+        names = {x.name for x in out}
+        assert "x" not in names                      # rooftop PV dropped
+        assert {"farm", "sized", "thermal", "ss"} <= names
+
+    def test_feature_cap_keeps_infra_and_largest_gens(self):
+        f = self._fetcher()
+        f._MAX_GUI_FEATURES = 100
+        feats = [self._gf(feature_type="substation", name=f"ss{i}",
+                          voltage_kv=275.0) for i in range(60)]
+        feats += [self._gf(feature_type="generator", name=f"g{i}",
+                           capacity_mw=float(i)) for i in range(200)]
+        out = f._cap_features(feats)
+        assert len(out) == 100
+        # all 60 substations survive; 40 largest generators kept
+        assert sum(1 for x in out if x.feature_type == "substation") == 60
+        gens = [x for x in out if x.feature_type == "generator"]
+        assert len(gens) == 40
+        assert min(g.capacity_mw for g in gens) == 160.0  # 200-40
+
+    def test_dedup_merges_near_and_keeps_far(self):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            deduplicate_features,
+        )
+        # three generators within 0.2km -> 1; one 10km away -> separate
+        cluster = [
+            self._gf(feature_type="generator", name=f"c{i}", capacity_mw=5.0,
+                     latitude=35.0 + i * 0.001, longitude=139.0)
+            for i in range(3)
+        ]
+        far = self._gf(feature_type="generator", name="far", capacity_mw=5.0,
+                       latitude=35.1, longitude=139.0)
+        out = deduplicate_features(cluster + [far], proximity_km=1.0)
+        gens = [x for x in out if x.feature_type == "generator"]
+        assert len(gens) == 2  # one merged cluster + the far one
+
+    def test_dedup_large_dense_is_fast(self):
+        import time
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            deduplicate_features,
+        )
+        dense = [
+            self._gf(feature_type="generator", name=f"g{i}", capacity_mw=0.0,
+                     latitude=35.6 + (i % 140) * 0.001,
+                     longitude=139.7 + (i // 140) * 0.001)
+            for i in range(15000)
+        ]
+        t0 = time.time()
+        deduplicate_features(dense, proximity_km=1.0)
+        assert time.time() - t0 < 10.0  # O(n^2) would be minutes
+
+
+class TestOverpassErrorSnippet:
+    def test_extracts_message_from_html(self):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            _overpass_error_snippet,
+        )
+        html = ('<html><body><p><strong style="color:#FF0000">Error</strong>: '
+                'runtime error: Dispatcher_Client::request_read_and_idx::timeout.'
+                ' The server is probably too busy.</p></body></html>')
+        out = _overpass_error_snippet(html)
+        assert "Dispatcher_Client" in out
+        assert "<strong" not in out
+
+    def test_empty_and_plain(self):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            _overpass_error_snippet,
+        )
+        assert _overpass_error_snippet("") == ""
+        assert "boom" in _overpass_error_snippet("boom plain text")
+
+
+class TestOSMFetcherResilience:
+    """A single failing tile (e.g. road-dense, times out on every mirror) must
+    not abort the whole region; only an all-tiles failure raises."""
+
+    def _fetcher(self):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            OSMGridFetcher,
+        )
+        return OSMGridFetcher((24.0, 122.9, 45.6, 145.8))  # Japan -> many tiles
+
+    class _EmptyResult:
+        nodes: list = []
+        ways: list = []
+
+    def test_one_failed_tile_is_skipped(self, monkeypatch):
+        import time as _t
+        monkeypatch.setattr(_t, "sleep", lambda *a, **k: None)
+        f = self._fetcher()
+        n = len(f._tile_bboxes())
+        calls = {"i": 0}
+
+        def fake_post(api, headers, query, time, requests):
+            i = calls["i"]
+            calls["i"] += 1
+            if i == 0:
+                raise RuntimeError("Overpass busy (504)")
+            return self._EmptyResult()
+
+        monkeypatch.setattr(f, "_post_query", fake_post)
+        out = f._fetch()
+        assert calls["i"] == n          # every tile attempted despite tile-0 fail
+        assert out == []                # empty fakes, but no exception raised
+
+    def test_all_tiles_failed_raises(self, monkeypatch):
+        import time as _t
+        monkeypatch.setattr(_t, "sleep", lambda *a, **k: None)
+        f = self._fetcher()
+
+        def fake_post(*a, **k):
+            raise RuntimeError("Overpass busy (504)")
+
+        monkeypatch.setattr(f, "_post_query", fake_post)
+        with pytest.raises(RuntimeError, match=r"All .* tile"):
+            f._fetch()
+
+
+class TestOSMFetcher400Fatal:
+    """A genuine query error (Overpass 'static error', e.g. an out-of-range
+    bbox) must fail fast, not burn retries."""
+
+    def _fetcher(self):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            OSMGridFetcher,
+        )
+        return OSMGridFetcher((0.0, 0.0, 1.0, 1.0))
+
+    def test_static_error_400_is_fatal_no_retry(self):
+        f = self._fetcher()
+
+        class _Resp:
+            status_code = 400
+            content = b""
+            text = ('<p><strong style="color:#FF0000">Error</strong>: line 3: '
+                    'static error: For the attribute "w" of the element '
+                    '"bbox-query" the only allowed values are floats between '
+                    '-180.0 and 180.0.</p>')
+
+        class _FakeRequests:
+            RequestException = _ReqExc
+            calls = 0
+
+            def post(self, *a, **k):
+                _FakeRequests.calls += 1
+                return _Resp()
+
+        class _Api:
+            def parse_json(self, c):
+                raise AssertionError("must not parse a 400")
+
+        class _T:
+            def sleep(self, *_):
+                pass
+
+        req = _FakeRequests()
+        with pytest.raises(RuntimeError, match="rejected query"):
+            f._post_query(_Api(), {}, "q", _T(), req)
+        assert req.calls == 1  # fatal: no retries
+
+
+class TestPolygonLongitudeNormalization:
+    """Leaflet can hand back longitudes outside [-180, 180] when the world map
+    is panned across a copy of the globe; the domain bounds must be normalised
+    so Overpass and the plant-DB filters see a valid bbox (regression: 0 plants
+    + Overpass static error for a Japan polygon drawn on a wrapped map)."""
+
+    def test_wrapped_japan_polygon_normalises_to_valid_bbox(self):
+        # Same normalisation the step applies; Japan drawn at +360 longitude.
+        def _norm_lng(x):
+            return ((float(x) + 180.0) % 360.0) - 180.0
+
+        ring = [[487.0, 24.0], [505.8, 24.0], [505.8, 45.6], [487.0, 45.6]]
+        poly = [(max(-90.0, min(90.0, c[1])), _norm_lng(c[0])) for c in ring]
+        lngs = [p[1] for p in poly]
+        assert all(-180.0 <= x <= 180.0 for x in lngs)
+        assert min(lngs) == pytest.approx(127.0)
+        assert max(lngs) == pytest.approx(145.8)

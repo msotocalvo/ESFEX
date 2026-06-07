@@ -499,27 +499,56 @@ def deduplicate_features(
         prox_km: float,
         capacity_check: bool,
     ) -> list[GridFeature]:
-        """Generic proximity merge for point-like features."""
+        """Greedy proximity merge for point-like features.
+
+        Spatially bucketed so the cost is ~O(n) instead of O(n^2): each item is
+        only compared against others in its own and adjacent grid cells. Without
+        this, a dense cluster (e.g. thousands of co-located OSM generators)
+        froze the GUI for minutes."""
+        import math
+        from collections import defaultdict
+
+        n = len(items)
+        if n <= 1:
+            return list(items)
         items.sort(key=lambda f: _SRC_PRIO.get(f.source, 9))
+
+        # Cell size ~prox_km in both axes (longitude scaled by cos(lat) so a
+        # 3x3 neighbourhood is guaranteed to contain every point within prox).
+        mean_lat = sum(f.latitude for f in items) / n
+        cell_lat = max(prox_km / 111.0, 1e-9)
+        cell_lon = max(prox_km / (111.0 * max(math.cos(math.radians(mean_lat)),
+                                              0.01)), 1e-9)
+        cells = [
+            (int(f.latitude // cell_lat), int(f.longitude // cell_lon))
+            for f in items
+        ]
+        buckets: dict[tuple[int, int], list[int]] = defaultdict(list)
+        for idx, c in enumerate(cells):
+            buckets[c].append(idx)
+
         kept: list[GridFeature] = []
-        used: set[int] = set()
+        used = [False] * n
         for i, a in enumerate(items):
-            if i in used:
+            if used[i]:
                 continue
-            for j in range(i + 1, len(items)):
-                if j in used:
-                    continue
-                b = items[j]
-                if _haversine_km(a.latitude, a.longitude,
-                                 b.latitude, b.longitude) > prox_km:
-                    continue
-                if capacity_check:
-                    max_cap = max(a.capacity_mw, b.capacity_mw, 0.001)
-                    if (abs(a.capacity_mw - b.capacity_mw) / max_cap
-                            > capacity_tolerance):
-                        continue
-                used.add(j)
-                _merge_attrs(a, b)
+            ci, cj = cells[i]
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    for j in buckets.get((ci + di, cj + dj), ()):
+                        if j <= i or used[j]:
+                            continue
+                        b = items[j]
+                        if _haversine_km(a.latitude, a.longitude,
+                                         b.latitude, b.longitude) > prox_km:
+                            continue
+                        if capacity_check:
+                            max_cap = max(a.capacity_mw, b.capacity_mw, 0.001)
+                            if (abs(a.capacity_mw - b.capacity_mw) / max_cap
+                                    > capacity_tolerance):
+                                continue
+                        used[j] = True
+                        _merge_attrs(a, b)
             kept.append(a)
         return kept
 
@@ -571,6 +600,17 @@ def deduplicate_features(
     return (
         others + kept_gens + kept_bats + kept_subs + kept_trs + kept_lines
     )
+
+
+def _overpass_error_snippet(text: str) -> str:
+    """Pull the human-readable message out of an Overpass HTML error page."""
+    if not text:
+        return ""
+    marker = text.find("Error</strong>:")
+    if marker != -1:
+        start = marker + len("Error</strong>:")
+        return " ".join(text[start:start + 200].split())
+    return " ".join(text[:160].split())
 
 
 # =====================================================================
@@ -629,8 +669,7 @@ class OSMGridFetcher(QThread):
         import requests
 
         self.progress.emit(5, "Connecting to Overpass API...")
-        overpass_url = "https://overpass-api.de/api/interpreter"
-        api = overpy.Overpass(url=overpass_url)
+        api = overpy.Overpass(url=self._OVERPASS_ENDPOINTS[0])
         # Overpass rejects urllib's default User-Agent with HTTP 406, so bypass
         # overpy's urlopen-based transport and POST via requests with an
         # identifying UA; parse_json still does the heavy lifting.
@@ -641,9 +680,138 @@ class OSMGridFetcher(QThread):
             ),
         }
 
-        bbox = f"{self.south},{self.west},{self.north},{self.east}"
+        tiles = self._tile_bboxes()
+        n_tiles = len(tiles)
+        if n_tiles > 1:
+            self.progress.emit(
+                10,
+                f"Large region: splitting into {n_tiles} tiles to stay "
+                "under the Overpass server timeout...",
+            )
 
-        # Build query parts based on requested element types
+        features: list[GridFeature] = []
+        seen_ids: set[str] = set()
+        failed_tiles = 0
+        last_tile_error: Exception | None = None
+        for ti, (ts, tw, tn, te) in enumerate(tiles):
+            if self._cancelled:
+                return []
+            query = self._build_query(f"{ts},{tw},{tn},{te}")
+            base = 15 + int(70 * ti / n_tiles)
+            label = (
+                f"Querying Overpass tile {ti + 1}/{n_tiles}..."
+                if n_tiles > 1
+                else "Querying Overpass API (this may take a while)..."
+            )
+            self.progress.emit(base, label)
+            # Be a polite API citizen between tiles: a short pause avoids
+            # bursting the server, which is what triggers the dispatcher
+            # timeouts in the first place.
+            if ti > 0:
+                time.sleep(1.0)
+            try:
+                result = self._post_query(api, headers, query, time, requests)
+            except RuntimeError as exc:
+                # One tile failing (e.g. a road-dense tile that times out on
+                # every mirror) must not abort the whole region — skip it and
+                # keep the rest. A fully-failed fetch is raised below.
+                failed_tiles += 1
+                last_tile_error = exc
+                logger.warning(
+                    "OSM tile %d/%d failed, skipping: %s", ti + 1, n_tiles, exc
+                )
+                continue
+            if result is None or self._cancelled:
+                return []
+
+            # --- Merge this tile's elements, de-duplicating across tiles. ---
+            # A way straddling a tile boundary is returned in full by every
+            # tile holding one of its nodes; keep the first copy by osm_id.
+            for node in result.nodes:
+                if self._cancelled:
+                    return []
+                feat = self._process_element(
+                    tags=node.tags,
+                    lat=float(node.lat),
+                    lng=float(node.lon),
+                    osm_id=f"node/{node.id}",
+                )
+                if feat and feat.osm_id not in seen_ids:
+                    seen_ids.add(feat.osm_id)
+                    features.append(feat)
+
+            for way in result.ways:
+                if self._cancelled:
+                    return []
+                feat = self._process_way(way)
+                if feat and feat.osm_id not in seen_ids:
+                    seen_ids.add(feat.osm_id)
+                    features.append(feat)
+
+        # If every tile failed, surface the error; partial coverage is OK.
+        if failed_tiles >= n_tiles:
+            raise RuntimeError(
+                f"All {n_tiles} Overpass tile(s) failed; last error: "
+                f"{last_tile_error}"
+            )
+        if failed_tiles:
+            logger.warning(
+                "%d of %d OSM tiles failed; returning partial results",
+                failed_tiles, n_tiles,
+            )
+
+        self.progress.emit(90, f"Filtering (voltage >= {self.min_voltage_kv} kV)...")
+        features = self._apply_filters(features)
+
+        skipped = (f" ({failed_tiles} tile(s) skipped)" if failed_tiles else "")
+        self.progress.emit(100, f"OSM: {len(features)} features found{skipped}")
+        return features
+
+    # ── Tiling + query helpers ───────────────────────────────────
+
+    # Max degrees of latitude/longitude per Overpass tile. A single query
+    # over a very large or dense region (e.g. all of Japan) blows past the
+    # server-side [timeout:180]; Overpass then returns HTTP 200 with an empty
+    # body and a "runtime error ... timed out" remark, which previously parsed
+    # as a silent empty success. Splitting the bbox into tiles keeps each
+    # query well under that limit.
+    _MAX_TILE_DEG = 5.0
+
+    # Overpass mirrors, tried in rotation across retries. The main instance
+    # returns HTTP 400 dispatcher timeouts under heavy load; rotating to a
+    # mirror sidesteps a single overloaded server.
+    _OVERPASS_ENDPOINTS = (
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.osm.ch/api/interpreter",
+    )
+
+    def _tile_bboxes(self) -> list[tuple[float, float, float, float]]:
+        """Split the region into a grid of sub-bboxes no larger than
+        ``_MAX_TILE_DEG`` per side. Small regions yield a single tile, so the
+        common case is unchanged."""
+        import math
+
+        s, w, n, e = self.south, self.west, self.north, self.east
+        n_lat = max(1, math.ceil((n - s) / self._MAX_TILE_DEG))
+        n_lon = max(1, math.ceil((e - w) / self._MAX_TILE_DEG))
+        d_lat = (n - s) / n_lat
+        d_lon = (e - w) / n_lon
+        tiles: list[tuple[float, float, float, float]] = []
+        for i in range(n_lat):
+            for j in range(n_lon):
+                tiles.append(
+                    (
+                        s + i * d_lat,
+                        w + j * d_lon,
+                        s + (i + 1) * d_lat,
+                        w + (j + 1) * d_lon,
+                    )
+                )
+        return tiles
+
+    def _build_query(self, bbox: str) -> str:
+        """Assemble the Overpass QL query for one bbox tile."""
         parts: list[str] = []
         if "substation" in self.element_types:
             parts += [
@@ -703,41 +871,73 @@ class OSMGridFetcher(QThread):
                 f'node["industrial"="tank_farm"]({bbox});',
             ]
         if {"fuel_entry", "fuel_storage"} & self.element_types:
+            # Only the major arteries used for fuel trucking. Including
+            # "secondary" pulls an order of magnitude more road geometry and
+            # reliably times out the Overpass dispatcher in dense regions.
             parts += [
-                f'way["highway"~"motorway|trunk|primary|secondary"]({bbox});',
+                f'way["highway"~"motorway|trunk|primary"]({bbox});',
             ]
 
-        query = (
+        return (
             "[out:json][timeout:180];\n(\n"
             + "\n".join(f"  {p}" for p in parts)
             + "\n);\nout body;\n>;\nout skel qt;"
         )
 
-        self.progress.emit(15, "Querying Overpass API (this may take a while)...")
-        max_retries = 3
-        retry_timeout = 30
+    def _post_query(self, api, headers, query, time, requests):
+        """POST one Overpass query with retries, rotating mirrors and backing
+        off between attempts.
+
+        Returns the parsed overpy ``Result``, or ``None`` if cancelled. Raises
+        ``RuntimeError`` once retries are exhausted. Two Overpass quirks are
+        handled explicitly:
+
+        * A server-side timeout/overload comes back as HTTP 200 with an empty
+          body and a ``"runtime error ... timed out"`` remark — treat as a
+          retryable failure, not a silently empty success.
+        * HTTP 400 covers BOTH genuine QL syntax errors (fatal) and transient
+          dispatcher/load timeouts under heavy traffic (retryable). Only a
+          body that names a ``parse error``/``static error`` is fatal.
+        """
+        endpoints = self._OVERPASS_ENDPOINTS
+        max_retries = 4
         last_error: Exception | None = None
-        result = None
         for attempt in range(max_retries + 1):
             if self._cancelled:
-                return []
+                return None
+            url = endpoints[attempt % len(endpoints)]
             try:
                 resp = requests.post(
-                    overpass_url,
+                    url,
                     data=query.encode("utf-8"),
                     headers=headers,
                     timeout=300,
                 )
                 if resp.status_code == 200:
-                    result = api.parse_json(resp.content)
-                    break
-                if resp.status_code in (429, 504):
-                    last_error = RuntimeError(
-                        f"Overpass temporary error {resp.status_code}"
-                    )
+                    sniff = resp.content[:2048] + resp.content[-2048:]
+                    if b"runtime error" in sniff or b"timed out" in sniff:
+                        last_error = RuntimeError(
+                            "Overpass server-side timeout (region tile too "
+                            "large or dense)"
+                        )
+                    else:
+                        return api.parse_json(resp.content)
                 elif resp.status_code == 400:
-                    raise RuntimeError(
-                        f"Overpass rejected query (400): {resp.text[:500]}"
+                    msg = _overpass_error_snippet(resp.text)
+                    low = resp.text.lower()
+                    if "static error" in low or "parse error" in low:
+                        # Genuine query error (e.g. an out-of-range bbox) —
+                        # retrying won't help; fail fast with the message.
+                        raise RuntimeError(
+                            f"Overpass rejected query (400): {msg}"
+                        )
+                    # Otherwise a transient dispatcher 400: retry on a mirror.
+                    last_error = RuntimeError(f"Overpass busy (400): {msg}")
+                elif resp.status_code in (429, 504):
+                    # Transient dispatcher/load timeout — retry on a mirror.
+                    last_error = RuntimeError(
+                        f"Overpass busy ({resp.status_code}): "
+                        f"{_overpass_error_snippet(resp.text)}"
                     )
                 else:
                     last_error = RuntimeError(
@@ -746,46 +946,11 @@ class OSMGridFetcher(QThread):
             except requests.RequestException as exc:
                 last_error = exc
             if attempt < max_retries:
-                time.sleep(retry_timeout)
-        if result is None:
-            raise RuntimeError(
-                f"Unable to get any result from the Overpass API after "
-                f"{max_retries + 1} attempts: {last_error}"
-            )
-
-        if self._cancelled:
-            return []
-
-        self.progress.emit(50, "Processing OSM features...")
-        features: list[GridFeature] = []
-
-        # --- Nodes ---
-        for node in result.nodes:
-            if self._cancelled:
-                return []
-            feat = self._process_element(
-                tags=node.tags,
-                lat=float(node.lat),
-                lng=float(node.lon),
-                osm_id=f"node/{node.id}",
-            )
-            if feat:
-                features.append(feat)
-
-        # --- Ways ---
-        self.progress.emit(65, f"Processing {len(result.ways)} ways...")
-        for way in result.ways:
-            if self._cancelled:
-                return []
-            feat = self._process_way(way)
-            if feat:
-                features.append(feat)
-
-        self.progress.emit(90, f"Filtering (voltage >= {self.min_voltage_kv} kV)...")
-        features = self._apply_filters(features)
-
-        self.progress.emit(100, f"OSM: {len(features)} features found")
-        return features
+                time.sleep(min(10 * (attempt + 1), 45))
+        raise RuntimeError(
+            f"Unable to get any result from the Overpass API after "
+            f"{max_retries + 1} attempts: {last_error}"
+        )
 
     # ── Element processing ───────────────────────────────────────
 
@@ -1157,20 +1322,61 @@ class OSMGridFetcher(QThread):
 
     # ── Filters ──────────────────────────────────────────────────
 
+    # Hard ceiling on features handed to the GUI. Dense countries (e.g. Japan)
+    # map hundreds of thousands of rooftop PV panels; even after dropping them,
+    # cap the rest so the single-threaded GUI/dedup never chokes.
+    _MAX_GUI_FEATURES = 25000
+
+    @staticmethod
+    def _is_rooftop_solar(f: GridFeature) -> bool:
+        """A ``power=generator`` point tagged solar with no usable capacity is
+        a rooftop PV install — irrelevant to a transmission model and mapped in
+        the hundreds of thousands across dense countries. Utility solar
+        (``power=plant`` or capacity-tagged) is kept."""
+        tags = getattr(f, "raw_tags", None) or {}
+        if tags.get("power") == "plant":
+            return False
+        src = (tags.get("generator:source")
+               or tags.get("plant:source")
+               or f.fuel or "").lower()
+        if "solar" not in src:
+            return False
+        return not (f.capacity_mw and f.capacity_mw > 0)
+
     def _apply_filters(self, features: list[GridFeature]) -> list[GridFeature]:
-        """Apply voltage and capacity filters."""
+        """Apply voltage/capacity filters, drop rooftop PV, and cap the total."""
         filtered: list[GridFeature] = []
         for f in features:
             # Voltage filter: applies to substations, lines, transformers
             if f.feature_type in ("substation", "line", "transformer"):
                 if f.voltage_kv > 0 and f.voltage_kv < self.min_voltage_kv:
                     continue
-            # Capacity filter: applies to generators
+            # Capacity filter + rooftop-PV drop: applies to generators
             if f.feature_type == "generator":
+                if self._is_rooftop_solar(f):
+                    continue
                 if f.capacity_mw > 0 and f.capacity_mw < self.min_capacity_mw:
                     continue
             filtered.append(f)
-        return filtered
+        return self._cap_features(filtered)
+
+    def _cap_features(self, features: list[GridFeature]) -> list[GridFeature]:
+        """Keep all network infrastructure; if the total still exceeds
+        ``_MAX_GUI_FEATURES``, keep only the largest generators so the GUI
+        stays responsive. Logs what was dropped instead of silently truncating."""
+        if len(features) <= self._MAX_GUI_FEATURES:
+            return features
+        infra = [f for f in features if f.feature_type != "generator"]
+        gens = [f for f in features if f.feature_type == "generator"]
+        budget = max(0, self._MAX_GUI_FEATURES - len(infra))
+        gens.sort(key=lambda g: g.capacity_mw, reverse=True)
+        kept = infra + gens[:budget]
+        logger.warning(
+            "OSM features capped %d -> %d (dropped %d low-priority generators; "
+            "raise min_voltage/min_capacity or select a smaller region)",
+            len(features), len(kept), len(features) - len(kept),
+        )
+        return kept
 
 
 def _parse_frequency(raw: str, lat: float = 0.0, lng: float = 0.0) -> float:

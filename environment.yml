@@ -11,10 +11,11 @@
 #   conda activate esfex
 #   esfex info
 #
-# For the optional resource-assessment workflows (solar/wind/OTEC), conda also
-# handles the GDAL/GEOS/PROJ stack cleanly:
+# The resource-assessment workflow deps (geopandas/rasterio/pvlib/atlite/…)
+# are part of the core install, but their GDAL/GEOS/PROJ native stack is far
+# smoother from conda-forge — install those binaries first, then pip esfex:
 #   conda install -c conda-forge geopandas rasterio pvlib atlite duckdb
-#   pip install "esfex[workflows]"
+#   pip install esfex
 name: esfex
 channels:
   - conda-forge

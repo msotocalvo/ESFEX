@@ -391,7 +391,19 @@ class GridMappingSourceFetchStep(QWidget):
             return
 
         ring = coords_raw[0]
-        self._polygon = [(c[1], c[0]) for c in ring]
+        # Leaflet returns longitudes outside [-180, 180] when the world map has
+        # been panned across a copy of the globe (e.g. scrolling east to reach
+        # Japan puts it near +487 instead of +127). Normalise so the resulting
+        # bbox is valid for the Overpass API and the global plant-database
+        # filters — otherwise Overpass rejects it (static error) and the
+        # bbox-filtered DataFrames match nothing (0 results).
+        def _norm_lng(x: float) -> float:
+            return ((float(x) + 180.0) % 360.0) - 180.0
+
+        self._polygon = [
+            (max(-90.0, min(90.0, float(c[1]))), _norm_lng(c[0]))
+            for c in ring
+        ]
 
         lats = [p[0] for p in self._polygon]
         lngs = [p[1] for p in self._polygon]
@@ -493,9 +505,12 @@ class GridMappingSourceFetchStep(QWidget):
         return len(self._features) > 0
 
     def cancel_all(self):
+        # Stop *and wait* — a fetcher QThread destroyed while still
+        # running aborts the process. stop_thread cancels cooperatively,
+        # then waits (terminating only as a last resort on teardown).
+        from esfex.visualization.workflows._wizard_utils import stop_thread
         for f in self._fetchers:
-            if hasattr(f, "cancel"):
-                f.cancel()
+            stop_thread(f)
 
     # ------------------------------------------------------------------
     # Fetch logic
@@ -514,6 +529,10 @@ class GridMappingSourceFetchStep(QWidget):
         self._progress_group.setVisible(True)
         self._summary_label.setText("")
         self._error_text.setVisible(False)
+        # Stop any fetchers still running from a previous click before we
+        # drop our references to them (reassigning the list would orphan a
+        # running QThread → "Destroyed while thread is still running").
+        self.cancel_all()
         self._features = []
         self._errors = []
         self._pending = 0
@@ -1492,6 +1511,11 @@ class GridMappingBuildStep(QWidget):
         self._cluster_progress.setValue(0)
         self._cluster_progress.setVisible(True)
 
+        # Stop a previous clustering run before replacing the reference —
+        # otherwise the old QThread is dropped while still running.
+        from esfex.visualization.workflows._wizard_utils import stop_thread
+        stop_thread(getattr(self, "_clustering_worker", None))
+
         worker = NodeClusteringWorker(
             features=self._features,
             criteria=selected,
@@ -1505,6 +1529,16 @@ class GridMappingBuildStep(QWidget):
         worker.error.connect(self._on_clustering_error)
         self._clustering_worker = worker
         worker.start()
+
+    def cancel_all(self):
+        """Stop the clustering worker (called on wizard close/cancel).
+
+        Without this the ``NodeClusteringWorker`` QThread can be destroyed
+        while still running — the crash seen on large regions (e.g. a
+        whole country) where clustering is still busy at teardown.
+        """
+        from esfex.visualization.workflows._wizard_utils import stop_thread
+        stop_thread(getattr(self, "_clustering_worker", None))
 
     def _on_clustering_progress(self, pct: int, msg: str):
         self._cluster_progress.setValue(pct)
@@ -4110,6 +4144,7 @@ class GridMappingDemandStep(QWidget):
         self._wb_data: dict = {}
         self._era5_data: dict = {}
         self._forecast_result = None
+        self._forecast_nodes: list = []
         self._forecast_worker = None
 
         outer = QVBoxLayout(self)
@@ -4262,6 +4297,11 @@ class GridMappingDemandStep(QWidget):
         self._lbl_forecast_summary = QLabel("")
         self._lbl_forecast_summary.setWordWrap(True)
         rg.addWidget(self._lbl_forecast_summary)
+
+        self._btn_view_demand = QPushButton(tr("grid_builder.view_demand"))
+        self._btn_view_demand.clicked.connect(self._on_view_demand)
+        self._btn_view_demand.setEnabled(False)
+        rg.addWidget(self._btn_view_demand)
 
         layout.addWidget(results_group)
 
@@ -4781,10 +4821,53 @@ class GridMappingDemandStep(QWidget):
         self._forecast_progress.setValue(100)
         self._lbl_forecast_status.setText("Forecast complete.")
 
+        # Remember the forecast nodes so the demand visualizer can read the
+        # per-node hourly series straight from the result.
+        self._forecast_nodes = list(nodes)
+        self._btn_view_demand.setEnabled(True)
+
         # Enable bus distribution
         has_eligible = len(self._targets) > 0
         self._btn_fetch_bld.setEnabled(has_eligible and self._bounds is not None)
         self._btn_apply.setEnabled(True)
+
+    def _on_view_demand(self):
+        """Open the demand visualizer with every forecasted node's series."""
+        result = self._forecast_result
+        if result is None:
+            return
+        import numpy as np
+
+        from esfex.visualization.data.gui_model import GuiNodeDemand
+        from esfex.visualization.panels.demand_visualizer import (
+            DemandVisualizerDialog,
+        )
+
+        series = getattr(result, "demand_multi_year", None)
+        if series is None:
+            series = getattr(result, "demand", None)
+        if series is None:
+            return
+        series = np.asarray(series)
+        ncols = series.shape[1] if series.ndim > 1 else 1
+
+        entries: list[tuple[str, GuiNodeDemand]] = []
+        for i, node in enumerate(self._forecast_nodes):
+            if i >= ncols:
+                break
+            col = series[:, i] if series.ndim > 1 else series
+            data = [float(x) for x in col]
+            entries.append((node.name, GuiNodeDemand(
+                data=data, num_hours=len(data),
+                peak_mw=float(max(data, default=0.0)),
+                total_mwh=float(sum(data)))))
+        if entries:
+            try:
+                start_year = int(self._spin_base_year.value())
+            except Exception:
+                start_year = 2025
+            DemandVisualizerDialog(
+                entries, self, start_year=start_year).exec()
 
     # ==================================================================
     # Section 2: Eligible nodes detection (for bus distribution)
@@ -4835,6 +4918,8 @@ class GridMappingDemandStep(QWidget):
         self._lbl_bld_status.setText("Fetching building footprints...")
         self._bld_progress.setValue(0)
 
+        from esfex.visualization.workflows._wizard_utils import stop_thread
+        stop_thread(getattr(self, "_fetcher", None))
         self._fetcher = BuildingFetcher(source, self._bounds)
         self._fetcher.progress.connect(self._on_bld_progress)
         self._fetcher.finished.connect(self._on_bld_finished)
@@ -4945,6 +5030,8 @@ class GridMappingDemandStep(QWidget):
 
         rules = self._get_rules()
         fallback = self._spin_fallback.value()
+        from esfex.visualization.workflows._wizard_utils import stop_thread
+        stop_thread(getattr(self, "_classify_worker", None))
         self._classify_worker = ClassifyDistributeWorker(
             self._buildings_gdf, rules, fallback, list(self._targets),
         )
@@ -5074,3 +5161,13 @@ class GridMappingDemandStep(QWidget):
                 self._map_widget.clear_demand_clusters()
             except Exception:
                 pass
+
+    def cancel_all(self):
+        """Stop the building-fetch and classify/distribute workers.
+
+        Invoked by ``cleanup_wizard`` on close so neither QThread is
+        destroyed while still running.
+        """
+        from esfex.visualization.workflows._wizard_utils import stop_thread
+        stop_thread(getattr(self, "_fetcher", None))
+        stop_thread(getattr(self, "_classify_worker", None))

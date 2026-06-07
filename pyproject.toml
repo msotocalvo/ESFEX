@@ -51,32 +51,21 @@ dependencies = [
     # message and falls back to the legacy QProcess console if the
     # import fails (so Windows users keep working).
     "ptyprocess>=0.7.0; sys_platform != 'win32'",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
-]
-viz = [
+    # ── Promoted from former optional extras to core ──────────────────
+    # These back GUI workflows and analyses that previously raised
+    # ModuleNotFoundError when the matching extra wasn't installed.
+    # Visualization / charts (former [viz]):
     "matplotlib>=3.7.0",
     "plotly>=5.14.0",
     "kaleido>=0.2.1",
-]
-sensitivity = [
+    # Sensitivity analysis (former [sensitivity]; matplotlib above):
     "SALib>=1.4.7",
-    "matplotlib>=3.7.0",
-]
-benchmark = [
+    # Benchmarking against other tools (former [benchmark]):
     "pypsa>=0.28.0",
     "pandapower>=2.14.0",
     "pypower>=5.1.0",
     "matpower>=7.1.0",
-]
-workflows = [
+    # GIS / resource-assessment workflows (former [workflows]):
     "pvlib>=0.11.0",
     "geopandas>=0.14.0",
     "duckdb>=1.0.0",
@@ -87,14 +76,21 @@ workflows = [
     "scikit-learn>=1.3.0",
     "atlite>=0.2.11",
     "rasterio>=1.3.0",
-]
-ml = [
+    # Demand estimation — classical ML (former [ml]):
     "xgboost>=2.0.0",
-]
-dl = [
+    # Demand estimation — deep learning (former [dl]; heavy: torch):
     "torch>=2.0.0",
     "pytorch-lightning>=2.0.0",
     "pytorch-forecasting>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
 ]
 
 [project.scripts]

@@ -13,13 +13,13 @@ If S_T is much larger than S_1 for a parameter, that parameter's influence depen
 
 ## Prerequisites
 
-Install ESFEX with the sensitivity analysis extra:
+A standard ESFEX install already includes everything needed:
 
 ```bash
-pip install "esfex[sensitivity]"
+pip install esfex
 ```
 
-This installs SALib [**[19]**](../reference/bibliography.md#ref19) (Sensitivity Analysis Library) and its dependencies.
+This bundles SALib [**[19]**](../reference/bibliography.md#ref19) (Sensitivity Analysis Library) and its dependencies as core requirements.
 
 ---
 

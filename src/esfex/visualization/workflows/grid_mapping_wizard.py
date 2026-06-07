@@ -265,8 +265,6 @@ class GridMappingWizard(QDialog):
             pass
 
     def _on_cancel(self):
-        self._step_source_fetch.cancel_all()
-        self._cleanup_map()
         self.reject()
 
     def accept(self):
@@ -274,8 +272,12 @@ class GridMappingWizard(QDialog):
         super().accept()
 
     def reject(self):
-        self._step_source_fetch.cancel_all()
-        self._cleanup_map()
+        # Stop the workers of *every* step (clustering, building fetch,
+        # classify) — not just the source-fetch step — so none is left
+        # running when the dialog is torn down. cleanup_wizard also runs
+        # _cleanup_map via its hook.
+        from esfex.visualization.workflows._wizard_utils import cleanup_wizard
+        cleanup_wizard(self)
         super().reject()
 
     # ------------------------------------------------------------------

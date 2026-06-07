@@ -390,7 +390,7 @@ class _WorkflowsNamespace:
                         base_temp=21.0, beta_cdd=0.0, beta_hdd=0.0):
         """Estimate hourly demand using the ML+econometric model.
 
-        Requires ``pip install esfex[ml]`` (xgboost).
+        Requires xgboost, which ships with the core esfex install.
 
         Parameters
         ----------
@@ -418,8 +418,8 @@ class _WorkflowsNamespace:
 
         if not DemandMLModel.is_available():
             raise RuntimeError(
-                "Demand ML model not available. Install with: "
-                "pip install esfex[ml]"
+                "Demand ML model not available. xgboost ships with esfex; "
+                "reinstall with: pip install --upgrade --force-reinstall esfex"
             )
 
         model = DemandMLModel.load_bundled()

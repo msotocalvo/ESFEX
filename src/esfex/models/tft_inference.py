@@ -89,7 +89,8 @@ class TFTSensitivityBackend:
             )
         except ImportError as exc:
             raise ImportError(
-                "pytorch-forecasting required: pip install 'esfex[dl]'"
+                "pytorch-forecasting required. It ships with esfex; reinstall "
+                "with: pip install --upgrade --force-reinstall esfex"
             ) from exc
 
         self._TFTClass = TemporalFusionTransformer

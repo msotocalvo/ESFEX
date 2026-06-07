@@ -203,6 +203,11 @@ class NodeForm(QWidget):
         self._demand_total_label = QLabel(tr("node_form.total"))
         demand_layout.addWidget(self._demand_total_label)
 
+        self._view_demand_btn = QPushButton(tr("node_form.view_demand"))
+        self._view_demand_btn.clicked.connect(self._on_view_demand)
+        self._view_demand_btn.setEnabled(False)
+        demand_layout.addWidget(self._view_demand_btn)
+
         vbox.addWidget(demand_group)
 
         # ── Demand Sectors ────────────────────────────────
@@ -392,6 +397,23 @@ class NodeForm(QWidget):
             self._demand_hours_label.setText(tr("node_form.hours"))
             self._demand_peak_label.setText(tr("node_form.peak"))
             self._demand_total_label.setText(tr("node_form.total"))
+
+        has_series = bool(getattr(demand, "data", None))
+        self._view_demand_btn.setEnabled(has_series)
+        self._view_demand_btn.setToolTip(
+            "" if has_series else tr("node_form.view_demand_disabled"))
+
+    def _on_view_demand(self):
+        if self._current_node is None:
+            return
+        node = self._model.get_node(self._current_node)
+        if node is None or not getattr(node.demand, "data", None):
+            return
+        from esfex.visualization.panels.demand_visualizer import (
+            DemandVisualizerDialog,
+        )
+        dlg = DemandVisualizerDialog([(node.name, node.demand)], self)
+        dlg.exec()
 
     # ==============================================================
     # Demand Sectors (definitions)

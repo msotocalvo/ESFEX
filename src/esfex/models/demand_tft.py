@@ -11,8 +11,8 @@ Architecture:
   - Decoder: 24 hours (1 day prediction)
   - Attention mechanism learns seasonal and diurnal patterns
 
-Requires: pip install 'esfex[dl]'
-  (torch, pytorch-lightning, pytorch-forecasting)
+Requires torch, pytorch-lightning, and pytorch-forecasting, all included
+in the core esfex install.
 """
 
 from __future__ import annotations
@@ -174,8 +174,8 @@ class DemandTFTModel:
             instance._model.eval()
         except ImportError:
             raise ImportError(
-                "pytorch-forecasting is required for TFT. "
-                "Install with: pip install 'esfex[dl]'"
+                "pytorch-forecasting is required for TFT. It ships with esfex; "
+                "reinstall with: pip install --upgrade --force-reinstall esfex"
             )
 
         if params_path.exists():
@@ -293,7 +293,8 @@ def train_tft_model(
         from pytorch_forecasting.data.encoders import NaNLabelEncoder
     except ImportError:
         raise ImportError(
-            "pytorch-forecasting required. Install with: pip install 'esfex[dl]'"
+            "pytorch-forecasting required. It ships with esfex; reinstall with: "
+            "pip install --upgrade --force-reinstall esfex"
         )
 
     import json

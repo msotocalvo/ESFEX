@@ -33,11 +33,19 @@ class BuildingFetcher(QThread):
         source: str,
         bounds: tuple[float, float, float, float],
         parent=None,
+        max_buildings: int | None = 1_000_000,
     ):
         super().__init__(parent)
         self.source = source
         self.south, self.west, self.north, self.east = bounds
         self._cancelled = False
+        # Hard cap on rows pulled from the cloud Parquet sources. A
+        # country-scale bbox (e.g. all of Japan) can match tens of
+        # millions of buildings; materialising them all blew out memory
+        # ("Unable to allocate 476 MiB") and could abort the process.
+        # ``None`` disables the cap. The cap is a safety net — typical
+        # city/region queries return far fewer rows and are unaffected.
+        self.max_buildings = max_buildings
 
     def cancel(self):
         self._cancelled = True
@@ -150,8 +158,18 @@ class BuildingFetcher(QThread):
         WHERE bbox.xmin BETWEEN {self.west} AND {self.east}
           AND bbox.ymin BETWEEN {self.south} AND {self.north}
         """
+        if self.max_buildings:
+            query += f"\n        LIMIT {int(self.max_buildings)}"
 
-        df = conn.execute(query).fetchdf()
+        try:
+            df = conn.execute(query).fetchdf()
+        except MemoryError as exc:
+            conn.close()
+            raise RuntimeError(
+                "Out of memory fetching Overture buildings for this region "
+                "— it is too large. Select a smaller area, or rely on the "
+                f"infrastructure-based fallback. ({exc})"
+            ) from exc
         conn.close()
 
         if self._cancelled:
@@ -298,6 +316,15 @@ class BuildingFetcher(QThread):
         conn = duckdb.connect()
         conn.execute("INSTALL spatial; LOAD spatial;")
         conn.execute("INSTALL httpfs; LOAD httpfs;")
+        # The dataset is laid out hive-partitioned by country, so the URLs
+        # below use a '**/*.parquet' glob. Recent DuckDB rejects '*' in
+        # HTTP paths unless this is enabled. Best-effort: older builds
+        # don't know the setting (and the query then surfaces its own
+        # clear error in the loop below).
+        try:
+            conn.execute("SET allow_asterisks_in_http_paths=true;")
+        except Exception:
+            pass
 
         self.progress.emit(20, "Querying buildings in bounding box...")
 
@@ -324,7 +351,12 @@ class BuildingFetcher(QThread):
                 WHERE bbox.xmin BETWEEN {self.west} AND {self.east}
                   AND bbox.ymin BETWEEN {self.south} AND {self.north}
                 """
+                if self.max_buildings:
+                    query += f"\n                LIMIT {int(self.max_buildings)}"
                 df = conn.execute(query).fetchdf()
+                break
+            except MemoryError as exc:
+                last_err = exc
                 break
             except Exception as exc:
                 last_err = exc
@@ -334,8 +366,15 @@ class BuildingFetcher(QThread):
         conn.close()
 
         if df is None:
+            # The source.coop layout is hive-partitioned and served over
+            # plain HTTPS, which cannot enumerate a '**' glob — so this
+            # source is frequently unavailable. Steer the user to the
+            # reliable alternatives rather than surfacing DuckDB's cryptic
+            # "Globs (`*`) ... are not supported" message verbatim.
             raise RuntimeError(
-                f"Could not fetch Google Open Buildings data: {last_err}"
+                "Could not fetch Google Open Buildings data (the HTTPS "
+                "endpoint cannot list its partitioned files). Use the "
+                f"Overture or Microsoft source instead. Details: {last_err}"
             )
 
         if self._cancelled:

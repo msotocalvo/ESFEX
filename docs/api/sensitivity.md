@@ -4,7 +4,7 @@ Module: `esfex.sensitivity`
 
 Submodules: `esfex.sensitivity.engine`, `esfex.sensitivity.lp_parser`, `esfex.sensitivity.worker`
 
-Requires: `pip install "esfex[sensitivity]"` (installs SALib, scipy)
+Requires: SALib and scipy, both included in the core `pip install esfex`.
 
 ## Overview
 

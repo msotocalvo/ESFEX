@@ -43,49 +43,28 @@ This installs the core dependencies:
 | psutil >= 5.9 | System resource monitoring during optimization |
 | SciPy >= 1.10 | Sparse matrix operations and scientific computing utilities |
 
-## Installation with Extras
+## What `pip install esfex` includes
 
-Optional dependency groups enable additional functionality. Combine multiple extras with commas inside the brackets.
+All runtime functionality ships as **core dependencies** — there is no
+need to select feature extras. A plain install already provides:
 
-=== "Visualization"
+- **Visualization** — Matplotlib (>= 3.7), Plotly (>= 5.14), Kaleido for
+  result charts, dispatch stack plots, and publication-quality figures.
+- **Studio** — PySide6 (>= 6.5) for the interactive GIS-based grid editor
+  (place nodes, generators, batteries, and lines on an OpenStreetMap map
+  and export YAML).
+- **Sensitivity analysis** — SALib (>= 1.4.7) for Sobol global sensitivity.
+- **Resource workflows** — pvlib, geopandas, duckdb, atlite, rasterio,
+  overpy, scikit-learn and supporting libraries for the solar PV, wind,
+  and OTEC resource-assessment wizards.
+- **Benchmarking** — pypsa, pandapower, pypower, matpower for cross-model
+  validation.
+- **Demand models** — xgboost (classical ML) and torch /
+  pytorch-forecasting (deep-learning TFT).
 
-    ```bash
-    pip install "esfex[viz]"
-    ```
-
-    Adds **Matplotlib** (>= 3.7) and **Plotly** (>= 5.14) for result visualization, dispatch stack plots, and interactive charts. Required if you want to generate publication-quality figures from simulation results.
-
-=== "Studio"
-
-    ```bash
-    pip install esfex
-    ```
-
-    Adds **PySide6** (>= 6.5) for the interactive GIS-based grid editor. The GUI allows you to place nodes, generators, batteries, and transmission lines on an OpenStreetMap-based map, configure equipment parameters through forms, and export the system as a YAML configuration file.
-
-=== "Sensitivity Analysis"
-
-    ```bash
-    pip install "esfex[sensitivity]"
-    ```
-
-    Adds **SALib** (>= 1.4.7) and **Matplotlib** for Sobol global sensitivity analysis. This enables systematic exploration of how input parameter uncertainty affects investment decisions and system costs.
-
-=== "Resource Workflows"
-
-    ```bash
-    pip install "esfex[workflows]"
-    ```
-
-    Adds **pvlib**, **geopandas**, **duckdb**, **atlite**, **rasterio**, **scikit-learn**, and supporting libraries for solar PV, wind, and OTEC resource assessment wizards. These wizards generate hourly availability profiles from geographic and meteorological data.
-
-=== "Full Installation"
-
-    ```bash
-    pip install "esfex[viz,sensitivity,workflows]"
-    ```
-
-    Installs all optional features.
+```bash
+pip install esfex
+```
 
 ## Development Installation
 
@@ -102,7 +81,8 @@ source .venv/bin/activate   # Linux/macOS
 # .venv\Scripts\activate    # Windows
 
 # Install in editable mode with development dependencies
-pip install -e ".[dev,viz,sensitivity]"
+# (all feature deps are core; .[dev] adds pytest, ruff, black, mypy)
+pip install -e ".[dev]"
 ```
 
 The `dev` extras include:
@@ -303,7 +283,7 @@ sudo apt install libxcb-xinerama0 libxkbcommon-x11-0 libegl1 libxcb-cursor0
 sudo dnf install libxcb libxkbcommon-x11 mesa-libEGL
 ```
 
-**Headless servers**: If you are running on a server without a display (e.g., for batch simulations), the GUI is not needed. Install only the core package or use `esfex[viz]` for generating figures without the interactive editor.
+**Headless servers**: If you are running on a server without a display (e.g., for batch simulations), the GUI is not needed — the core install already includes the plotting libraries (Matplotlib, Plotly) for generating figures without launching the interactive editor.
 
 ### macOS
 

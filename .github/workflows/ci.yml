@@ -68,12 +68,12 @@ jobs:
       # Non-editable install: the modern setuptools editable finder resolves
       # some sub-modules (e.g. esfex.visualization.i18n) as namespace packages
       # under pytest ("unknown location"); a regular install avoids that.
-      # viz (matplotlib/plotly) and sensitivity (SALib) extras are needed by
-      # parts of the test suite; without them those tests error on import.
-      - name: Install package (with dev, viz, sensitivity extras)
+      # matplotlib/plotly/SALib and the other former extras are now core
+      # dependencies, so only the dev extra (pytest, etc.) is needed here.
+      - name: Install package (with dev extra)
         run: |
           python -m pip install --upgrade pip
-          pip install ".[dev,viz,sensitivity]"
+          pip install ".[dev]"
 
       - name: Run tests (excluding Julia optimization)
         run: xvfb-run -a pytest tests/ -m "not julia" --cov=esfex --cov-report=xml

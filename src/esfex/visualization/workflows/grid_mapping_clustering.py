@@ -188,7 +188,10 @@ def _fetch_building_centroids_ml(
                 progress_callback(
                     f"Fetching buildings from {source.title()}..."
                 )
-            fetcher = BuildingFetcher(source, bounds)
+            # Node clustering only needs a representative sample of
+            # building centroids to seed K-means, so cap the pull low —
+            # this keeps whole-country regions fast and memory-safe.
+            fetcher = BuildingFetcher(source, bounds, max_buildings=300_000)
             if source == "overture":
                 gdf = fetcher._fetch_overture()
             elif source == "microsoft":

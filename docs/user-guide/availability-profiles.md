@@ -283,9 +283,8 @@ The optimizer can **curtail** (produce less than available) but never exceed the
 
 ### Using ESFEX Built-in Workflows
 
-```bash
-pip install "esfex[workflows]"
-```
+The workflow dependencies (`pvlib`, `atlite`, `geopandas`, …) are part of
+the core install — `pip install esfex` is all you need.
 
 - **Solar PV**: Uses `pvlib` with ERA5 reanalysis data to compute hourly capacity factors. Accounts for panel orientation, temperature losses, and inverter efficiency.
 - **Wind**: Uses `atlite` with ERA5 or MERRA-2 data to compute hourly capacity factors. Accounts for hub height, power curve, and air density corrections.

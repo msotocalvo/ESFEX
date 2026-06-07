@@ -645,7 +645,10 @@ def train_xgboost(
     try:
         import xgboost as xgb
     except ImportError:
-        raise ImportError("xgboost required. Install with: pip install 'esfex[ml]'")
+        raise ImportError(
+            "xgboost required. It ships with esfex; reinstall with: "
+            "pip install --upgrade --force-reinstall esfex"
+        )
     from sklearn.metrics import r2_score
 
     if output_path is None:

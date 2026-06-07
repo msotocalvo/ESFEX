@@ -21,6 +21,71 @@ from __future__ import annotations
 import logging
 
 
+def stop_thread(thread, wait_ms: int = 4000) -> None:
+    """Stop a ``QThread`` and block (bounded) until it has finished.
+
+    Destroying a ``QThread`` whose ``run()`` is still executing is
+    undefined behaviour in Qt — it prints
+    ``QThread: Destroyed while thread is still running`` and typically
+    aborts the whole process. Worker-owning widgets must therefore stop
+    their threads *and wait* before those threads can be garbage
+    collected (on dialog close, or when a new run replaces the old one).
+
+    Stop order:
+
+    1. Cooperative cancel — call ``cancel()`` / ``requestInterruption()``
+       and set a ``_cancelled`` flag if the worker exposes one. Workers
+       that poll these exit on their own, which is the clean path.
+    2. ``quit()`` the thread's event loop (a no-op for the ``run()``
+       override workers here, but harmless and correct for event-loop
+       threads).
+    3. ``wait(wait_ms)``. If the worker is blocked in a long native call
+       (a DuckDB query, a big K-means) it may ignore the cancel flag; on
+       timeout we ``terminate()`` as a last resort. Terminating is unsafe
+       in general, but it is strictly better than letting a running
+       thread be destroyed — and it only happens on teardown.
+
+    Defensive throughout: a thread that is ``None``, already finished, or
+    whose underlying C++ object is gone is a silent no-op.
+    """
+    log = logging.getLogger(__name__)
+    if thread is None:
+        return
+    try:
+        if not thread.isRunning():
+            return
+    except RuntimeError:
+        # Underlying C++ QThread already deleted — nothing to stop.
+        return
+
+    for attr in ("cancel", "requestInterruption"):
+        fn = getattr(thread, attr, None)
+        if callable(fn):
+            try:
+                fn()
+            except Exception:
+                pass
+    try:
+        thread._cancelled = True
+    except Exception:
+        pass
+    try:
+        thread.quit()
+    except Exception:
+        pass
+    try:
+        if not thread.wait(wait_ms):
+            log.warning(
+                "Worker %r ignored cancellation for %dms; terminating",
+                thread, wait_ms,
+            )
+            thread.terminate()
+            thread.wait(1000)
+    except RuntimeError:
+        # C++ object vanished mid-wait; treat as stopped.
+        pass
+
+
 def cleanup_wizard(wizard) -> None:
     """Cancel running workers and reset the shared map widget.
 

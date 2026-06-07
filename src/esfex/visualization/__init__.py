@@ -50,8 +50,8 @@ def launch_studio(
         from PySide6.QtWidgets import QApplication
     except ImportError:
         raise ImportError(
-            "PySide6 is required for the Studio. "
-            "Install it with:  pip install 'esfex[gui]'"
+            "PySide6 is required for the Studio. It ships with esfex; "
+            "reinstall with: pip install --upgrade --force-reinstall esfex"
         )
 
     from esfex.visualization.app import _get_or_create_app, run_studio

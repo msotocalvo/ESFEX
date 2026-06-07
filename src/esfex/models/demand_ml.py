@@ -220,7 +220,8 @@ class DemandMLModel:
                 import xgboost as xgb
             except ImportError:
                 raise ImportError(
-                    "xgboost required. Install with: pip install 'esfex[ml]'"
+                    "xgboost required. It ships with esfex; reinstall with: "
+                    "pip install --upgrade --force-reinstall esfex"
                 )
             instance = cls(engine="xgboost")
             instance._model = xgb.Booster()

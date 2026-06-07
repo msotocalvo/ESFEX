@@ -189,14 +189,13 @@ The GIS Studio (PySide6) is included in the core install — no extra is require
 
 ### Optional dependency groups
 
+All runtime features — visualization, sensitivity analysis, resource
+workflows, benchmarking, and the ML/DL demand models — ship as **core
+dependencies**, so a plain `pip install esfex` already includes them.
+The only optional group is the developer tooling:
+
 ```bash
-pip install -e ".[dev]"          # pytest, ruff, black, mypy
-pip install -e ".[viz]"          # matplotlib, plotly, kaleido
-pip install -e ".[sensitivity]"  # SALib (Sobol indices)
-pip install -e ".[workflows]"    # resource-assessment pipelines (pvlib, geopandas, atlite, rasterio, …)
-pip install -e ".[benchmark]"    # pypsa, pandapower, pypower (cross-model validation)
-pip install -e ".[ml]"           # xgboost (demand model)
-pip install -e ".[dl]"           # torch, pytorch-forecasting (TFT demand model)
+pip install -e ".[dev]"          # pytest, pytest-cov, ruff, black, mypy
 ```
 
 ### Julia backend

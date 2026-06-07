@@ -503,7 +503,8 @@ def fetch_nex_gddp(
     except ImportError:
         logger.warning(
             "xarray not installed — cannot fetch NEX-GDDP-CMIP6 data.  "
-            "Install with: pip install 'esfex[workflows]'"
+            "It ships with esfex; reinstall with: "
+            "pip install --upgrade --force-reinstall esfex"
         )
         return None
 
