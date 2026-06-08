@@ -183,7 +183,15 @@ def _create_fuels_and_technologies(
     fuel_remap: dict[str, str] = {}
     tech_remap: dict[str, str | None] = {}
 
-    unique_fuels = {g.fuel for g in generators if g.fuel and g.fuel != "None"}
+    def _has_fuel(g) -> bool:
+        return bool(g.fuel) and g.fuel not in ("None", "none")
+
+    unique_fuels = {g.fuel for g in generators if _has_fuel(g)}
+    # Generators whose fuel could not be detected still need a fuel AND a
+    # technology, otherwise they end up referencing a non-existent "Other"
+    # fuel with no technology. Route them through the catalog "Other" entry.
+    if any(not _has_fuel(g) for g in generators):
+        unique_fuels.add("Other")
 
     for raw_fuel in sorted(unique_fuels):
         canonical = _normalize_fuel_key(raw_fuel)
@@ -207,8 +215,18 @@ def _create_fuels_and_technologies(
             result.fuels_created += 1
             logger.info("Created fuel '%s' from '%s'", fuel_id, raw_fuel)
         else:
+            # Unknown fuel: keep its name but give it the catalog "Other"
+            # numeric defaults so it is actually solvable (non-zero energy
+            # content / price), not a bare 0-everything fuel.
             fuel_id = raw_fuel.replace(" ", "_")
-            model.add_fuel(fuel_id, raw_fuel)
+            od = _FUEL_DEFAULTS["other"]
+            model.add_fuel(
+                fuel_id, raw_fuel,
+                unit=od["unit"],
+                emission_factor=od["emission_factor"],
+                energy_content=od["energy_content"],
+                price_base=od["price_base"],
+            )
             result.fuels_created += 1
             logger.info("Created generic fuel '%s' from '%s'", fuel_id, raw_fuel)
         fuel_remap[raw_fuel] = fuel_id
@@ -238,7 +256,23 @@ def _create_fuels_and_technologies(
             result.technologies_created += 1
             logger.info("Created technology '%s' (%s)", tech_id, tdef["name"])
         else:
-            tech_id = None
+            # No catalog default and no existing tech: create a generic
+            # technology so the generator is never left without one (the
+            # solver needs a tech reference for every generator).
+            fuel_name = (state.fuels[fuel_id].name
+                         if fuel_id in state.fuels else fuel_id)
+            tech_id = model.add_technology(
+                name=f"{fuel_name} Generator",
+                category="Non-renewable",
+                fuel=fuel_id,
+                life_time=25,
+                eff_at_rated=0.35,
+                eff_at_min=0.25,
+            )
+            result.technologies_created += 1
+            logger.info(
+                "Created generic technology '%s' for fuel '%s'",
+                tech_id, fuel_id)
         tech_remap[raw_fuel] = tech_id
 
     return fuel_remap, tech_remap
@@ -628,9 +662,17 @@ def _create_generator(
     # Phase 2 runs before lines (Phase 4) exist, so the true backbone
     # (inter-node line endpoints) is unknown at this point.
 
-    # Map fuel to canonical fuel_id and resolve technology
-    mapped_fuel = (fuel_remap or {}).get(gen.fuel, gen.fuel) or "Other"
-    mapped_tech = (tech_remap or {}).get(gen.fuel)
+    # Map fuel to canonical fuel_id and resolve technology. A generator with
+    # no detected fuel is routed through the catalog "Other" entry (created in
+    # _create_fuels_and_technologies) so it gets a real fuel AND technology
+    # instead of a dangling "Other" reference with technology_id=None.
+    raw_fuel = gen.fuel if (gen.fuel and gen.fuel not in ("None", "none")) else "Other"
+    mapped_fuel = (fuel_remap or {}).get(raw_fuel, raw_fuel) or "Other"
+    mapped_tech = (tech_remap or {}).get(raw_fuel)
+    if mapped_tech is None:
+        # Last-resort: reuse any technology already bound to the mapped fuel.
+        mapped_tech = _find_existing_technology(
+            state, mapped_fuel, _normalize_fuel_key(mapped_fuel))
 
     # Determine unit_key from mapped fuel
     fuel_key = mapped_fuel.lower().replace(" ", "_") if mapped_fuel else "gen_mapped"

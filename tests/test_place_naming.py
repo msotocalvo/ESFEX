@@ -90,3 +90,44 @@ def test_build_replaces_placeholder_node_no_duplicate(qapp):
     names = [n.name for n in model.state.nodes]
     assert names == ["Caracas", "Guayana"]
     assert len(names) == len(set(names))
+
+
+def test_time_budget_stops_geocoding():
+    """Geocoding must stop at the wall-clock budget so the step never hangs;
+    remaining nodes keep generic names."""
+    import time as _t
+
+    from esfex.visualization.workflows.place_naming import (
+        name_positions_by_region,
+    )
+
+    calls = {"n": 0}
+
+    def slow(lat, lng):
+        calls["n"] += 1
+        _t.sleep(0.01)
+        return f"Place{int(lat)}"
+
+    pos = [(float(i), 0.0, f"Node {i}") for i in range(40)]
+    out = name_positions_by_region(
+        pos, geocode=slow, rate_limit_s=0.0, time_budget_s=0.05, max_geocode=80)
+    assert len(out) == 40
+    assert calls["n"] < 40  # budget halted geocoding early
+    assert any(n.startswith("Node ") for _, _, n in out)  # generic fallback
+
+
+def test_max_geocode_cap():
+    from esfex.visualization.workflows.place_naming import (
+        name_positions_by_region,
+    )
+
+    calls = {"n": 0}
+
+    def g(lat, lng):
+        calls["n"] += 1
+        return "X"
+
+    pos = [(float(i), 0.0, f"Node {i}") for i in range(30)]
+    name_positions_by_region(
+        pos, geocode=g, rate_limit_s=0.0, time_budget_s=None, max_geocode=7)
+    assert calls["n"] == 7

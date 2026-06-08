@@ -160,20 +160,52 @@ def _parse_capacity_tag(raw: str) -> float:
 _OSM_SOURCE_TO_FUEL: dict[str, tuple[str, str]] = {
     # (ESFEX fuel, gen_type)
     "solar": ("Solar", "Renewable"),
+    "solar_photovoltaic": ("Solar", "Renewable"),
+    "solar_thermal": ("Solar", "Renewable"),
+    "photovoltaic": ("Solar", "Renewable"),
     "wind": ("Wind", "Renewable"),
     "hydro": ("Water", "Renewable"),
+    "water": ("Water", "Renewable"),
     "tidal": ("Water", "Renewable"),
     "wave": ("Water", "Renewable"),
     "geothermal": ("Geothermal", "Renewable"),
     "biomass": ("Biomass", "Renewable"),
+    "wood": ("Biomass", "Renewable"),
+    "wood_pellets": ("Biomass", "Renewable"),
+    "wood_chips": ("Biomass", "Renewable"),
+    "biofuel": ("Biomass", "Renewable"),
     "biogas": ("Biogas", "Renewable"),
+    "landfill_gas": ("Biogas", "Renewable"),
+    "sewage_gas": ("Biogas", "Renewable"),
     "waste": ("Waste", "Renewable"),
     "gas": ("Natural Gas", "Non-renewable"),
+    "natural_gas": ("Natural Gas", "Non-renewable"),
+    "lng": ("Natural Gas", "Non-renewable"),
+    "cng": ("Natural Gas", "Non-renewable"),
     "coal": ("Coal", "Non-renewable"),
+    "lignite": ("Coal", "Non-renewable"),
+    "brown_coal": ("Coal", "Non-renewable"),
     "oil": ("Diesel", "Non-renewable"),
+    "fuel_oil": ("Fuel_oil", "Non-renewable"),
+    "heavy_oil": ("Fuel_oil", "Non-renewable"),
+    "petroleum": ("Diesel", "Non-renewable"),
     "diesel": ("Diesel", "Non-renewable"),
+    "gasoline": ("Diesel", "Non-renewable"),
     "nuclear": ("Nuclear", "Non-renewable"),
     "battery": ("None", "Storage"),
+}
+
+# Fallback when ``generator:source`` is missing/unknown but the build method
+# is unambiguous about the energy source.
+_OSM_METHOD_TO_FUEL: dict[str, tuple[str, str]] = {
+    "photovoltaic": ("Solar", "Renewable"),
+    "wind_turbine": ("Wind", "Renewable"),
+    "fission": ("Nuclear", "Non-renewable"),
+    "water-turbine": ("Water", "Renewable"),
+    "water-storage": ("Water", "Renewable"),
+    "water-pumped-storage": ("Water", "Renewable"),
+    "run-of-the-river": ("Water", "Renewable"),
+    "anaerobic_digestion": ("Biogas", "Renewable"),
 }
 
 _OSM_CONTENT_TO_FUEL: dict[str, str] = {
@@ -1009,6 +1041,14 @@ class OSMGridFetcher(QThread):
                 src.lower().split(";")[0].strip(),
                 ("Other", "Non-renewable"),
             )
+            # Source missing/unknown → fall back to the (unambiguous) method.
+            if fuel == "Other":
+                method = tags.get("generator:method",
+                                  tags.get("plant:method", ""))
+                fuel, gen_type = _OSM_METHOD_TO_FUEL.get(
+                    method.lower().split(";")[0].strip(),
+                    (fuel, gen_type),
+                )
             # Try multiple capacity tags in priority order
             capacity_mw = 0.0
             for cap_tag in (

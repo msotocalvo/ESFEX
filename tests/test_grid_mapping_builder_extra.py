@@ -254,7 +254,10 @@ class TestCreateFuelsAndTechnologies:
         assert result.technologies_created == 1
         assert "Coal" in model.state.fuels
 
-    def test_skips_none_and_empty_fuel(self):
+    def test_unfueled_generators_get_other_fuel_and_tech(self):
+        # Generators with no detected fuel must still get a real fuel AND a
+        # technology (routed through the catalog "Other" entry) — never a
+        # dangling reference with technology_id=None.
         model = MockGuiModel(_make_state())
         result = ParseResult()
         gens = [
@@ -263,21 +266,21 @@ class TestCreateFuelsAndTechnologies:
         ]
         fuel_remap, tech_remap = gmb._create_fuels_and_technologies(
             model, gens, result)
-        assert fuel_remap == {}
-        assert tech_remap == {}
-        assert result.fuels_created == 0
+        assert fuel_remap["Other"] == "Other"
+        assert tech_remap["Other"] is not None
+        assert "Other" in model.state.fuels
+        assert result.fuels_created == 1 and result.technologies_created == 1
 
-    def test_canonical_none_continues(self):
-        # A fuel that normalizes to "none" is skipped inside the loop.
+    def test_none_fuel_routed_to_other(self):
+        # A literal "none" fuel is treated as undetected and routed to "Other"
+        # so the generator still gets a fuel + technology.
         model = MockGuiModel(_make_state())
         result = ParseResult()
         gens = [_feat("generator", fuel="none")]
-        fuel_remap, _ = gmb._create_fuels_and_technologies(
+        fuel_remap, tech_remap = gmb._create_fuels_and_technologies(
             model, gens, result)
-        # "none" filtered both by the comprehension guard (g.fuel != "None")
-        # — keep it: fuel == "none" passes the guard then canonical == "none"
-        # hits the continue. Either way no fuel created.
-        assert result.fuels_created == 0
+        assert fuel_remap["Other"] == "Other"
+        assert tech_remap["Other"] is not None
 
     def test_reuses_existing_fuel(self):
         state = _make_state()
@@ -299,8 +302,9 @@ class TestCreateFuelsAndTechnologies:
         # Unknown key → generic fuel id with spaces replaced.
         assert fuel_remap["Magic Dust"] == "Magic_Dust"
         assert result.fuels_created == 1
-        # No tech default for unknown canonical → tech_remap is None.
-        assert tech_remap["Magic Dust"] is None
+        # Unknown canonical → a generic technology is created (never None).
+        assert tech_remap["Magic Dust"] is not None
+        assert result.technologies_created == 1
 
     def test_existing_tech_fuel_reference_updated(self):
         state = _make_state()
@@ -1378,3 +1382,57 @@ class TestPolygonLongitudeNormalization:
         assert all(-180.0 <= x <= 180.0 for x in lngs)
         assert min(lngs) == pytest.approx(127.0)
         assert max(lngs) == pytest.approx(145.8)
+
+
+def test_no_orphan_generators_after_build():
+    """Every generator the Grid Builder creates must reference an existing
+    fuel and an existing technology — including generators whose fuel was not
+    detected (empty/None) or is unknown. Regression for 'generators left
+    without technologies nor fuels'."""
+    model = MockGuiModel(_make_state(buses={}))
+    feats = [
+        _feat("substation", name="S1", voltage_kv=220.0),
+        _feat("generator", name="G_solar", capacity_mw=50.0, fuel="solar"),
+        _feat("generator", name="G_empty", capacity_mw=20.0, fuel=""),
+        _feat("generator", name="G_none", capacity_mw=8.0, fuel="None"),
+        _feat("generator", name="G_unknown", capacity_mw=10.0, fuel="Magic Dust"),
+    ]
+    gmb.build_grid_from_features(model, feats)
+    gens = list(model.state.generators.values())
+    assert len(gens) == 4
+    for g in gens:
+        assert g.fuel and g.fuel in model.state.fuels, \
+            f"{g.name}: fuel '{g.fuel}' not in fuels"
+        assert g.technology_id and g.technology_id in model.state.technologies, \
+            f"{g.name}: technology_id '{g.technology_id}' not in technologies"
+
+
+class TestOSMFuelDetection:
+    """OSM generator fuel detection: expanded source aliases + a method
+    fallback so fewer generators fall back to 'Other'."""
+
+    def _fetcher(self):
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            OSMGridFetcher,
+        )
+        return OSMGridFetcher((0.0, 0.0, 1.0, 1.0))
+
+    @pytest.mark.parametrize("tags,expected", [
+        ({"power": "generator", "generator:source": "natural_gas"}, "Natural Gas"),
+        ({"power": "generator", "generator:source": "lng"}, "Natural Gas"),
+        ({"power": "generator", "generator:source": "lignite"}, "Coal"),
+        ({"power": "generator", "generator:source": "wood"}, "Biomass"),
+        ({"power": "generator", "generator:source": "landfill_gas"}, "Biogas"),
+        ({"power": "generator", "generator:source": "heavy_oil"}, "Fuel_oil"),
+        # method fallback when source missing/unknown
+        ({"power": "generator", "generator:method": "photovoltaic"}, "Solar"),
+        ({"power": "generator", "generator:method": "wind_turbine"}, "Wind"),
+        ({"power": "plant", "generator:method": "fission"}, "Nuclear"),
+        ({"power": "generator", "generator:method": "run-of-the-river"}, "Water"),
+        # genuinely unknown still maps to Other
+        ({"power": "generator", "generator:source": "unobtanium"}, "Other"),
+    ])
+    def test_fuel_detected(self, tags, expected):
+        feat = self._fetcher()._process_element(
+            tags=tags, lat=0.5, lng=0.5, osm_id="node/1")
+        assert feat is not None and feat.fuel == expected
