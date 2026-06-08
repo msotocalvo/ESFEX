@@ -1522,3 +1522,74 @@ def test_build_creates_distinct_gas_technologies():
                 if t.name == "OCGT")
     assert by_name["BigGas"].technology_id == ccgt
     assert by_name["Peaker"].technology_id == ocgt
+
+
+class TestNodeOperationalDefaults:
+    """The build must leave nodes operationally complete: non-zero reserves
+    and transmission losses (a Grid-Builder network used to ship reserve=0,
+    losses=0 — no security margin, lossless grid)."""
+
+    def _state_with_gens(self, peak=0.0):
+        from esfex.visualization.data.gui_model import (
+            GuiGeneratorInstance, GuiNode, GuiNodeDemand, GuiSystemState,
+        )
+        st = GuiSystemState(name="S", nodes=[GuiNode(index=0, name="N0")])
+        st.nodes[0].demand = GuiNodeDemand(peak_mw=peak)
+        st.generators = {
+            "g0": GuiGeneratorInstance(instance_id="g0", unit_key="u",
+                                       name="G0", gen_type="Non-renewable",
+                                       fuel="Gas", node=0, rated_power=300.0),
+            "g1": GuiGeneratorInstance(instance_id="g1", unit_key="u",
+                                       name="G1", gen_type="Non-renewable",
+                                       fuel="Coal", node=0, rated_power=600.0),
+        }
+        return st
+
+    def test_capacity_basis_when_no_demand(self):
+        from esfex.visualization.workflows.grid_mapping_quality import (
+            apply_node_operational_defaults,
+        )
+        st = self._state_with_gens(peak=0.0)
+        ch = apply_node_operational_defaults(st)
+        n = st.nodes[0]
+        assert n.losses == 0.02
+        assert n.reserve_static == pytest.approx(90.0)   # 10% of 900 MW cap
+        assert n.reserve_dynamic == pytest.approx(45.0)  # 5% of 900 MW cap
+        assert n.reserve_duration >= 1
+        assert ch["reserves"] == 1 and ch["losses"] == 1
+
+    def test_demand_basis_preferred(self):
+        from esfex.visualization.workflows.grid_mapping_quality import (
+            apply_node_operational_defaults,
+        )
+        st = self._state_with_gens(peak=200.0)  # demand beats capacity
+        apply_node_operational_defaults(st)
+        n = st.nodes[0]
+        assert n.reserve_static == pytest.approx(20.0)   # 10% of 200 MW peak
+        assert n.reserve_dynamic == pytest.approx(10.0)  # 5% of 200 MW peak
+
+    def test_explicit_values_preserved(self):
+        from esfex.visualization.workflows.grid_mapping_quality import (
+            apply_node_operational_defaults,
+        )
+        st = self._state_with_gens(peak=200.0)
+        st.nodes[0].reserve_static = 50.0
+        st.nodes[0].reserve_dynamic = 7.0
+        st.nodes[0].losses = 0.05
+        ch = apply_node_operational_defaults(st)
+        n = st.nodes[0]
+        assert n.reserve_static == 50.0 and n.losses == 0.05
+        assert ch["reserves"] == 0 and ch["losses"] == 0
+
+
+def test_build_fills_node_reserves_and_losses():
+    model = MockGuiModel(_make_state(buses={}))
+    feats = [
+        _feat("substation", name="S1", voltage_kv=220.0),
+        _feat("generator", name="G", capacity_mw=500.0, fuel="gas"),
+    ]
+    gmb.build_grid_from_features(model, feats)
+    for n in model.state.nodes:
+        assert n.losses > 0, f"node {n.index} has zero losses"
+        assert n.reserve_static > 0 and n.reserve_dynamic > 0, \
+            f"node {n.index} has zero reserves"

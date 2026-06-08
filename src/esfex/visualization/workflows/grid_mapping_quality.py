@@ -436,6 +436,50 @@ def infer_frequency_hz(lat: float, lng: float) -> float:
     return 50.0
 
 
+# ── Node operating defaults (reserves / losses) ────────────────────
+
+# A Grid-Builder network leaves node reserves and transmission losses at 0,
+# i.e. no security margin and a lossless grid. Fill them with conservative,
+# standard defaults so the produced config is operationally complete.
+_DEFAULT_NODE_LOSS = 0.02       # 2% transmission losses per node
+_STATIC_RESERVE_FRAC = 0.10     # contingency reserve = 10% of the basis
+_DYNAMIC_RESERVE_FRAC = 0.05    # spinning/frequency reserve = 5% of the basis
+
+
+def apply_node_operational_defaults(state) -> dict[str, int]:
+    """Fill node operating reserves and transmission losses where still unset.
+
+    Reserves are sized off the node's peak demand when a forecast is present,
+    otherwise off its installed generation capacity:
+      - static (contingency) reserve = 10% of the basis,
+      - dynamic (spinning) reserve   = 5% of the basis,
+      - transmission losses          = 2%.
+    Only zero fields are filled, so explicit/user values are preserved.
+    Returns a count of nodes whose reserves / losses were filled.
+    """
+    changed = {"reserves": 0, "losses": 0}
+    cap_by_node: dict[int, float] = {}
+    for g in state.generators.values():
+        cap_by_node[g.node] = cap_by_node.get(g.node, 0.0) + (g.rated_power or 0.0)
+
+    for node in state.nodes:
+        if node.losses <= 0:
+            node.losses = _DEFAULT_NODE_LOSS
+            changed["losses"] += 1
+
+        peak = 0.0
+        if node.demand is not None and node.demand.peak_mw:
+            peak = float(node.demand.peak_mw)
+        basis = peak if peak > 0 else cap_by_node.get(node.index, 0.0)
+        if basis > 0 and node.reserve_static <= 0 and node.reserve_dynamic <= 0:
+            node.reserve_static = round(_STATIC_RESERVE_FRAC * basis, 2)
+            node.reserve_dynamic = round(_DYNAMIC_RESERVE_FRAC * basis, 2)
+            if node.reserve_duration < 1:
+                node.reserve_duration = 1
+            changed["reserves"] += 1
+    return changed
+
+
 # ── Retroactive realistic-defaults application ─────────────────────
 
 

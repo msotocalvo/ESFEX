@@ -546,6 +546,22 @@ def build_grid_from_features(
     except Exception as exc:
         result.warnings.append(f"Fuel/bus consistency repair: {exc}")
 
+    # ── Phase 12: Node operating defaults (reserves + losses) ─────
+    # Fill the operational fields the build leaves at 0 so the produced
+    # network is complete and behaves with a security margin.
+    try:
+        from esfex.visualization.workflows.grid_mapping_quality import (
+            apply_node_operational_defaults,
+        )
+        nd = apply_node_operational_defaults(model.state)
+        if nd.get("reserves") or nd.get("losses"):
+            result.warnings.append(
+                f"Node defaults: reserves set on {nd.get('reserves', 0)} node(s), "
+                f"losses on {nd.get('losses', 0)} node(s)"
+            )
+    except Exception as exc:
+        result.warnings.append(f"Node operational defaults: {exc}")
+
     return result
 
 
