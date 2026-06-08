@@ -51,6 +51,10 @@ Per-release notes are also published on the
 - **Map zoom-out and world wrapping** — the Grid Builder map is constrained to a
   single copy of the world: it no longer zooms out below 1× world size or pans
   onto wrapped copies of the globe (which produced out-of-range longitudes).
+- **OTEC cycle diagrams across NumPy/SciPy versions** — thermodynamic state
+  values are coerced to plain floats so the T-s / P-h loop arrays stay
+  homogeneous (no ragged-array errors) and `mass_flow` is always a float,
+  regardless of the installed NumPy/CoolProp build.
 - **"Lines toward a centroid" after a rebuild** — the node-assignment spatial
   index cached on the centroid *count*, so a rebuild with re-clustered
   centroids of the same count reused a stale tree and collapsed the network

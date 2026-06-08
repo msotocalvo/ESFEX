@@ -28,6 +28,32 @@ MIXTURE_CYCLES = ("kalina", "uehara")
 LOOP_CYCLES = ("rankine_closed",)
 
 
+def _to_scalar(v: Any) -> Any:
+    """Coerce a scalar-like thermodynamic value to a plain Python float.
+
+    ``otex``/CoolProp may return a state value as a NumPy scalar or a 0-d /
+    single-element array depending on the installed NumPy and CoolProp
+    versions. Downstream code then either builds a *ragged* ``np.array`` (when
+    only some states are arrays) or fails ``isinstance(x, float)`` checks. We
+    normalise every scalar-like value to a Python ``float`` so behaviour is
+    version-independent; non-numeric values (e.g. labels) pass through.
+    """
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        arr = np.asarray(v)
+    except (TypeError, ValueError):
+        return v
+    if arr.ndim == 0 or arr.size == 1:
+        try:
+            return float(arr.reshape(-1)[0])
+        except (TypeError, ValueError):
+            return v
+    return v
+
+
 def build_cycle(config: StudioConfig) -> tuple[Any, Any]:
     """Instantiate the configured cycle and its working fluid.
 
@@ -57,8 +83,15 @@ def compute_states(
     p_cond = float(fluid.saturation_pressure(t_cond))
     inputs = build_inputs_template(config)
     states = cycle.calculate_cycle_states(t_evap, t_cond, p_evap, p_cond, inputs)
+    # Normalise scalar state values to plain floats (see _to_scalar): keeps the
+    # T-s / P-h loop arrays homogeneous and ``mass_flow`` a real float across
+    # NumPy/CoolProp versions.
+    if isinstance(states, dict):
+        states = {k: _to_scalar(v) for k, v in states.items()}
     try:
         mass_flow = cycle.calculate_mass_flow(config.gross_power, states)
+        if not isinstance(mass_flow, dict):
+            mass_flow = _to_scalar(mass_flow)
     except Exception:
         mass_flow = None
     return {
@@ -99,8 +132,8 @@ def closed_loop_ts(
     1→2 pump (≈T_cond), 2→3 liquid heating along the saturated-liquid line to
     T_evap then evaporation, 3→4 turbine expansion to T_cond, 4→1 condensation.
     """
-    s1, s2 = states["s_1"], states["s_2"]
-    s3, s4 = states["s_3"], states["s_4"]
+    s1, s2 = _to_scalar(states["s_1"]), _to_scalar(states["s_2"])
+    s3, s4 = _to_scalar(states["s_3"]), _to_scalar(states["s_4"])
     heat_T = np.linspace(t_cond, t_evap, n_heat)
     heat_s = [float(fluid.entropy_liquid(t)) for t in heat_T]
     s_pts = [s1, s2, *heat_s, s3, s4, s1]
@@ -112,7 +145,8 @@ def closed_loop_ph(
     states: dict, p_evap: float, p_cond: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Closed-Rankine cycle path in (enthalpy, pressure) coordinates."""
-    h_pts = [states["h_1"], states["h_2"], states["h_3"], states["h_4"], states["h_1"]]
+    h = [_to_scalar(states[k]) for k in ("h_1", "h_2", "h_3", "h_4")]
+    h_pts = [h[0], h[1], h[2], h[3], h[0]]
     p_pts = [p_cond, p_evap, p_evap, p_cond, p_cond]
     return np.array(h_pts), np.array(p_pts)
 
