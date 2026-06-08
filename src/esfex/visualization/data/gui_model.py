@@ -1642,6 +1642,26 @@ class GuiModel(QObject):
         if len(self.state.transmission_lines) < before:
             self.lineRemoved.emit(line_id)
 
+    def remove_lines(self, line_ids):
+        """Remove many lines in a single O(L) pass.
+
+        ``remove_line`` rebuilds the whole ``transmission_lines`` list on
+        every call, so removing N lines one-by-one is O(N·L) — quadratic on
+        country-scale networks. This batches the removal into one rebuild.
+        """
+        ids = set(line_ids)
+        if not ids:
+            return
+        self.checkpoint()
+        kept = []
+        removed = []
+        for ln in self.state.transmission_lines:
+            (removed if ln.line_id in ids else kept).append(ln)
+        if removed:
+            self.state.transmission_lines = kept
+            for ln in removed:
+                self.lineRemoved.emit(ln.line_id)
+
     def update_line(self, line_id: str, **kwargs):
         self.checkpoint()
         for ln in self.state.transmission_lines:

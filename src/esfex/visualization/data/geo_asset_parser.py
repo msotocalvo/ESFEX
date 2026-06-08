@@ -214,6 +214,67 @@ def _find_nearest_node(
     return None, float("inf")
 
 
+# ── Spatial bus index (grid bucketing) ───────────────────────────
+# Scanning every bus on each snap query makes the build O(features x buses) —
+# minutes-to-hours for a country-scale OSM import (e.g. Japan). Maintain a grid
+# index instead so each query only inspects buses in the nearby cells.
+_BUS_GRID_CELL_DEG = 0.25  # ~28 km grid cells
+
+
+def _snap_deg_thresh(lat: float, snap_km: float) -> float:
+    """Degree half-window that safely covers ``snap_km`` at this latitude.
+
+    Longitude degrees shrink with latitude (111·cos(lat) km/deg), so the
+    window must widen toward the poles. A tiny epsilon absorbs rounding.
+    The previous fixed ``+0.5`` margin (~55 km) made the candidate window
+    so wide that, in a dense urban cluster, every query scanned the whole
+    cluster — re-introducing O(n²). This bound is tight to ``snap_km``.
+    """
+    coslat = max(math.cos(math.radians(lat)), 0.2)  # floor → safe to ~78° lat
+    return snap_km / (111.0 * coslat) + 0.02
+
+
+def _bus_cell(lat: float, lng: float) -> tuple[int, int]:
+    return (int(math.floor(lat / _BUS_GRID_CELL_DEG)),
+            int(math.floor(lng / _BUS_GRID_CELL_DEG)))
+
+
+def _bus_grid(state: GuiSystemState) -> dict:
+    """``{cell: [bus_id]}`` spatial index; rebuilt only when out of sync."""
+    grid = getattr(state, "_bus_grid_idx", None)
+    if grid is not None and getattr(state, "_bus_grid_n", -1) == len(state.buses):
+        return grid
+    grid = {}
+    for bid, bus in state.buses.items():
+        grid.setdefault(_bus_cell(bus.latitude, bus.longitude), []).append(bid)
+    state._bus_grid_idx = grid
+    state._bus_grid_n = len(state.buses)
+    return grid
+
+
+def _bus_grid_add(state: GuiSystemState, bus_id: str,
+                  lat: float, lng: float) -> None:
+    """Incrementally index a newly created bus so the grid stays in sync."""
+    grid = getattr(state, "_bus_grid_idx", None)
+    if grid is None:
+        return  # built lazily on the next query
+    grid.setdefault(_bus_cell(lat, lng), []).append(bus_id)
+    state._bus_grid_n = getattr(state, "_bus_grid_n", 0) + 1
+
+
+def _bus_candidates(state: GuiSystemState, lat: float, lng: float,
+                    deg_radius: float):
+    """Yield bus ids whose grid cell is within *deg_radius* of (lat, lng)."""
+    grid = _bus_grid(state)
+    ci, cj = _bus_cell(lat, lng)
+    span = int(math.ceil(deg_radius / _BUS_GRID_CELL_DEG))
+    for di in range(-span, span + 1):
+        for dj in range(-span, span + 1):
+            cell = grid.get((ci + di, cj + dj))
+            if cell:
+                yield from cell
+
+
 def _find_nearest_bus(
     lat: float, lng: float, state: GuiSystemState,
     _snap_km: float = 50.0,
@@ -222,8 +283,8 @@ def _find_nearest_bus(
 ) -> tuple[Optional[str], float]:
     """Find nearest existing bus by geographic distance. Returns (bus_id, dist_km).
 
-    Uses a bounding-box pre-filter to avoid computing haversine for
-    distant buses — significant speedup for large networks.
+    Only buses in the nearby grid cells are inspected (O(local density) instead
+    of O(all buses)).
 
     When *voltage_kv* is given, only buses whose voltage is within
     *voltage_tolerance* (relative) of the requested voltage are considered.
@@ -231,9 +292,11 @@ def _find_nearest_bus(
     """
     best_id: Optional[str] = None
     best_dist = float("inf")
-    # Approximate degree threshold for pre-filter (~111 km/deg)
-    deg_thresh = _snap_km / 111.0 + 0.5  # generous margin
-    for bid, bus in state.buses.items():
+    deg_thresh = _snap_deg_thresh(lat, _snap_km)
+    for bid in _bus_candidates(state, lat, lng, deg_thresh):
+        bus = state.buses.get(bid)
+        if bus is None:
+            continue
         # Voltage filter: skip buses with incompatible voltage
         if voltage_kv is not None and voltage_kv > 0 and bus.voltage_kv > 0:
             ratio = bus.voltage_kv / voltage_kv
@@ -241,7 +304,6 @@ def _find_nearest_bus(
                 continue
         blat = bus.latitude
         blng = bus.longitude
-        # Quick rectangular pre-filter (avoids expensive haversine)
         if abs(blat - lat) > deg_thresh or abs(blng - lng) > deg_thresh:
             continue
         d = _haversine_km(lat, lng, blat, blng)
@@ -269,6 +331,38 @@ def _find_nearest_fuel_point(
 # ── Ensure-at helpers ────────────────────────────────────────────
 
 
+def _node_centroid_tree(state: GuiSystemState, centroids: dict):
+    """Cached equirectangular KD-tree over node centroids → ``(tree, idxs,
+    coslat)`` or ``None``.
+
+    Keyed on the centroid *contents*, not their count: an earlier version
+    cached on ``len(centroids)`` and so, on a rebuild with re-clustered nodes
+    but the same node count, reused a STALE tree built from the previous
+    centroid positions — assigning every feature to the wrong node and
+    collapsing the network toward wrong centroids ("lines to a centroid").
+    Longitude is scaled by cos(mean lat) so the Euclidean metric tracks
+    great-circle distance (a raw lat/lng tree misassigned ~8 % of features).
+    """
+    if not centroids:
+        return None
+    key = hash(tuple(sorted(centroids.items())))
+    cached = getattr(state, "_node_tree_cache", None)
+    if cached is not None and getattr(state, "_node_tree_key", None) == key:
+        return cached
+    state._node_tree_key = key
+    try:
+        from scipy.spatial import cKDTree
+        idxs = list(centroids.keys())
+        lats = [centroids[i][0] for i in idxs]
+        lngs = [centroids[i][1] for i in idxs]
+        coslat = math.cos(math.radians(sum(lats) / len(lats)))
+        pts = [(lats[j], lngs[j] * coslat) for j in range(len(idxs))]
+        state._node_tree_cache = (cKDTree(pts), idxs, coslat)
+    except Exception:
+        state._node_tree_cache = None
+    return state._node_tree_cache
+
+
 def _find_nearest_node_idx(
     state: GuiSystemState,
     lat: float, lng: float,
@@ -279,9 +373,32 @@ def _find_nearest_node_idx(
     Nodes are never created during geo-asset parsing — they are abstract
     network regions, not geographic elements.  If no node exists, returns 0
     (the caller should have ensured at least one node exists beforehand).
+
+    Uses a projected KD-tree (see :func:`_node_centroid_tree`) and refines the
+    few nearest candidates with exact haversine, so the result matches a full
+    haversine scan while staying fast on networks with many nodes.
     """
     if not state.nodes:
         return 0
+    tree = _node_centroid_tree(state, centroids) if centroids else None
+    if tree is not None:
+        kdt, idxs, coslat = tree
+        k = min(4, len(idxs))
+        _d, pos = kdt.query((lat, lng * coslat), k=k)
+        positions = [int(pos)] if k == 1 else [int(p) for p in pos]
+        best_idx = None
+        best_dist = float("inf")
+        for p in positions:
+            if p < 0 or p >= len(idxs):
+                continue
+            ni = idxs[p]
+            clat, clng = centroids[ni]
+            d = _haversine_km(lat, lng, clat, clng)
+            if d < best_dist:
+                best_dist = d
+                best_idx = ni
+        if best_idx is not None:
+            return best_idx
     nearest_idx, _ = _find_nearest_node(lat, lng, state.nodes, centroids)
     return nearest_idx if nearest_idx is not None else state.nodes[0].index
 
@@ -322,17 +439,20 @@ def _ensure_bus_at(
     # 2. Find the nearest existing node (or use forced node)
     node_idx = force_node if force_node is not None else _find_nearest_node_idx(state, lat, lng, centroids)
 
-    # Check if this node already has a bus within snap distance (voltage-aware)
-    for bid, bus in state.buses.items():
-        if bus.parent_node == node_idx:
-            # Skip buses with incompatible voltage
-            if req_voltage > 0 and bus.voltage_kv > 0:
-                ratio = bus.voltage_kv / req_voltage
-                if ratio < 0.9 or ratio > 1.1:
-                    continue
-            d = _haversine_km(lat, lng, bus.latitude, bus.longitude)
-            if d < snap_km:
-                return node_idx, bid
+    # Check if this node already has a bus within snap distance (voltage-aware).
+    # Only nearby buses (via the grid) are inspected, not every bus.
+    for bid in _bus_candidates(state, lat, lng, _snap_deg_thresh(lat, snap_km)):
+        bus = state.buses.get(bid)
+        if bus is None or bus.parent_node != node_idx:
+            continue
+        # Skip buses with incompatible voltage
+        if req_voltage > 0 and bus.voltage_kv > 0:
+            ratio = bus.voltage_kv / req_voltage
+            if ratio < 0.9 or ratio > 1.1:
+                continue
+        d = _haversine_km(lat, lng, bus.latitude, bus.longitude)
+        if d < snap_km:
+            return node_idx, bid
 
     # 3. Create a bus on this node with properties from GeoJSON
     #    Compute lat/lng offset from the parent node so the bus appears
@@ -369,6 +489,7 @@ def _ensure_bus_at(
         latitude=lat,
         longitude=lng,
     )
+    _bus_grid_add(state, bus_id, lat, lng)
     result.buses_added += 1
     return node_idx, bus_id
 

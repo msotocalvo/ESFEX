@@ -483,3 +483,68 @@ def test_infer_system_cap_infinite_without_demand():
     )
     gmi.infer_electrical_params(state)
     assert state.transmission_lines[0].capacity_mw == pytest.approx(5.0)
+
+
+# ── _bridge_flow_index (linear-time replacement for per-edge BFS) ────────
+
+
+def test_bridge_flow_index_matches_bfs_on_random_graphs():
+    """The O(V+E) bridge index must return exactly what the per-edge BFS
+    (``_flow_through_edge``) returns, for every edge and both directions."""
+    import random
+    rng = random.Random(1234)
+    for _ in range(150):
+        n = rng.randint(2, 16)
+        nodes = [f"n{i}" for i in range(n)]
+        adj = {x: set() for x in nodes}
+        edges = []
+        for _e in range(rng.randint(1, n * 2)):
+            u, v = rng.sample(nodes, 2)
+            if v not in adj[u]:
+                adj[u].add(v)
+                adj[v].add(u)
+                edges.append((u, v))
+        inj = {x: rng.uniform(-10, 10) for x in nodes}
+        flow = gmi._bridge_flow_index(adj, inj)
+        for (u, v) in edges:
+            for a, b in ((u, v), (v, u)):
+                assert flow(a, b) == pytest.approx(
+                    gmi._flow_through_edge(adj, inj, a, b))
+
+
+def test_bridge_flow_index_handles_deep_chain_without_recursion():
+    """A long linear chain must not hit Python's recursion limit (the index
+    uses an iterative DFS) and must treat every chain edge as a bridge."""
+    n = 5000
+    nodes = [f"n{i}" for i in range(n)]
+    adj = {x: set() for x in nodes}
+    for i in range(n - 1):
+        adj[nodes[i]].add(nodes[i + 1])
+        adj[nodes[i + 1]].add(nodes[i])
+    inj = {x: 1.0 for x in nodes}
+    inj[nodes[0]] = -float(n - 1)  # balance so the far end carries known flow
+    flow = gmi._bridge_flow_index(adj, inj)
+    # Edge between n0 and n1: n0 side injection = inj[n0] = -(n-1) → |n-1|.
+    assert flow("n0", "n1") == pytest.approx(n - 1)
+
+
+def test_infer_electrical_params_scales_on_large_mesh():
+    """Country-scale inference must stay fast — the per-edge BFS made this
+    O(E²) and hung the build ('Building network…') for minutes."""
+    import time
+    import random
+    rng = random.Random(7)
+    buses = {f"b{i}": _bus() for i in range(3000)}
+    # a connected backbone (chain) + random chords (mesh)
+    lines = [_line(f"b{i}", f"b{i+1}", voltage_kv=220.0) for i in range(2999)]
+    for _ in range(3000):
+        u, v = rng.randint(0, 2999), rng.randint(0, 2999)
+        if u != v:
+            lines.append(_line(f"b{u}", f"b{v}", voltage_kv=220.0))
+    state = _state(buses=buses, transmission_lines=lines,
+                   nodes=[_node(0, 5000.0)])
+    t0 = time.time()
+    rep = gmi.infer_electrical_params(state)
+    elapsed = time.time() - t0
+    assert rep.lines_capacity_set > 0
+    assert elapsed < 5.0, f"inference too slow ({elapsed:.1f}s) — O(E²)?"

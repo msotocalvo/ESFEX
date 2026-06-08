@@ -860,3 +860,68 @@ def test_apply_mixed_assignments_processes_all_geometries():
     summ = r.summary()
     assert "transmission line(s)" in summ
     assert "development zone(s)" in summ
+
+
+class TestFindNearestNodeIdxScales:
+    """The projected KD-tree path must match a full haversine scan AND must
+    not reuse a stale tree across rebuilds (the bug that collapsed networks
+    toward wrong centroids — 'lines to a centroid')."""
+
+    @staticmethod
+    def _hav(lat, lng, clat, clng):
+        return _haversine_km(lat, lng, clat, clng)
+
+    def _state(self, centroids):
+        from esfex.visualization.data.gui_model import GuiSystemState
+        st = GuiSystemState(name="s")
+        st.nodes = [GuiNode(index=k, name=f"N{k}",
+                            centroid_lat=c[0], centroid_lng=c[1])
+                    for k, c in centroids.items()]
+        return st
+
+    def test_matches_full_haversine_scan(self):
+        import random
+        rng = random.Random(5)
+        centroids = {k: (30.0 + k * (15.0 / 7), 135.0 + rng.uniform(-2, 2))
+                     for k in range(8)}
+        st = self._state(centroids)
+        for _ in range(2000):
+            lat = 30.0 + rng.random() * 15.0
+            lng = 135.0 + rng.uniform(-3, 3)
+            got = _find_nearest_node_idx(st, lat, lng, centroids)
+            tru = min(centroids.items(),
+                      key=lambda kv: self._hav(lat, lng, kv[1][0], kv[1][1]))[0]
+            assert got == tru
+
+    def test_cache_invalidates_on_recluster_same_count(self):
+        # First call builds the tree; a second call with DIFFERENT centroids
+        # of the SAME length must NOT reuse it.
+        import random
+        rng = random.Random(6)
+        c1 = {k: (30.0 + k * 2.0, 135.0) for k in range(8)}
+        c2 = {k: (45.0 - k * 2.0, 140.0) for k in range(8)}  # moved, same count
+        st = self._state(c1)
+        _find_nearest_node_idx(st, 31.0, 135.0, c1)  # warm cache on c1
+        # rebuild the node objects to match c2 too
+        st = self._state(c2)
+        for _ in range(1500):
+            lat = 30.0 + rng.random() * 15.0
+            lng = 135.0 + rng.uniform(-3, 3)
+            got = _find_nearest_node_idx(st, lat, lng, c2)
+            tru = min(c2.items(),
+                      key=lambda kv: self._hav(lat, lng, kv[1][0], kv[1][1]))[0]
+            assert got == tru
+
+    def test_many_nodes_correct(self):
+        import random
+        rng = random.Random(7)
+        centroids = {k: (20 + rng.random() * 30, 120 + rng.random() * 30)
+                     for k in range(500)}
+        st = self._state(centroids)
+        for _ in range(1500):
+            lat = 20 + rng.random() * 30
+            lng = 120 + rng.random() * 30
+            got = _find_nearest_node_idx(st, lat, lng, centroids)
+            tru = min(centroids.items(),
+                      key=lambda kv: self._hav(lat, lng, kv[1][0], kv[1][1]))[0]
+            assert got == tru

@@ -185,6 +185,80 @@ def _flow_through_edge(
     return abs(inj_a)
 
 
+def _bridge_flow_index(adj: dict[str, set[str]], inj: dict[str, float]):
+    """Precompute every edge's flow bound in O(V+E) instead of O(E·(V+E)).
+
+    ``_flow_through_edge`` answers, per edge: if removing it disconnects the
+    graph (a *bridge*), the ``|net injection|`` of the side reachable from
+    the ``from`` endpoint; otherwise 0. Doing a fresh BFS per edge is
+    quadratic and was the dominant cost of a country-scale build (Japan:
+    ~12k edges → minutes, the GUI appearing hung at "Building network…").
+
+    A single **iterative** Tarjan bridge-finding pass (iterative so deep
+    chains don't blow Python's recursion limit) with post-order injection
+    sums yields identical answers: for a bridge tree-edge ``(parent, child)``
+    the child's DFS subtree is exactly one cut side, and its injection sum is
+    accumulated on the way back up.
+
+    Returns ``flow(a, b) -> float`` mirroring ``_flow_through_edge``.
+    """
+    disc: dict[str, int] = {}
+    low: dict[str, int] = {}
+    sub: dict[str, float] = {}          # subtree injection (incl. node)
+    comp_total: dict[str, float] = {}   # component-wide injection per node
+    bridge_child: dict[frozenset, str] = {}  # {u,v} -> child endpoint
+    timer = 0
+
+    for root in adj:
+        if root in disc:
+            continue
+        comp_nodes: list[str] = [root]
+        disc[root] = low[root] = timer
+        timer += 1
+        sub[root] = inj.get(root, 0.0)
+        # iterative DFS; each frame: (node, parent, neighbour-iterator)
+        stack = [(root, None, iter(adj[root]))]
+        while stack:
+            node, par, it = stack[-1]
+            descended = False
+            for nb in it:
+                if nb == par:
+                    continue  # tree edge back to parent (set adj → once)
+                if nb not in disc:
+                    disc[nb] = low[nb] = timer
+                    timer += 1
+                    sub[nb] = inj.get(nb, 0.0)
+                    comp_nodes.append(nb)
+                    stack.append((nb, node, iter(adj[nb])))
+                    descended = True
+                    break
+                elif disc[nb] < low[node]:
+                    low[node] = disc[nb]
+            if not descended:
+                stack.pop()
+                if stack:
+                    p = stack[-1][0]
+                    if low[node] < low[p]:
+                        low[p] = low[node]
+                    sub[p] += sub[node]
+                    if low[node] > disc[p]:
+                        bridge_child[frozenset((p, node))] = node
+        total = 0.0
+        for n in comp_nodes:
+            total += inj.get(n, 0.0)
+        for n in comp_nodes:
+            comp_total[n] = total
+
+    def flow(a: str, b: str) -> float:
+        child = bridge_child.get(frozenset((a, b)))
+        if child is None:
+            return 0.0  # not a bridge → edge sits on a cycle
+        inj_a = sub[child] if a == child else comp_total[a] - sub[child]
+        return abs(inj_a)
+
+    return flow
+
+
 def infer_electrical_params(state: "GuiSystemState") -> InferenceReport:
     """Walk the network and infer missing line/transformer parameters.
 
@@ -196,6 +270,9 @@ def infer_electrical_params(state: "GuiSystemState") -> InferenceReport:
         return rep
     inj = _bus_injection(state)
     adj = _adjacency(state)
+    # O(V+E) precompute of every edge's flow bound (see _bridge_flow_index);
+    # replaces a per-edge BFS that made this O(E²).
+    _flow = _bridge_flow_index(adj, inj)
 
     # System-wide upper bound: no edge needs to carry more than the
     # peak demand of the whole system (energy conservation), with a
@@ -221,7 +298,7 @@ def infer_electrical_params(state: "GuiSystemState") -> InferenceReport:
             continue
         if ln.from_bus == ln.to_bus:
             continue
-        flow = _flow_through_edge(adj, inj, ln.from_bus, ln.to_bus)
+        flow = _flow(ln.from_bus, ln.to_bus)
         # Use line voltage if set, else the from-bus voltage.
         v = ln.voltage_kv or state.buses[ln.from_bus].voltage_kv
         needed = _bounded(flow * _SAFETY_FACTOR, v)
@@ -249,7 +326,7 @@ def infer_electrical_params(state: "GuiSystemState") -> InferenceReport:
             continue
         if tr.from_bus == tr.to_bus:
             continue
-        flow = _flow_through_edge(adj, inj, tr.from_bus, tr.to_bus)
+        flow = _flow(tr.from_bus, tr.to_bus)
         # Cap at system peak and at the SIL of the HIGHER voltage side
         # (a step-down trafo is bounded by its HV terminal capacity).
         v_max = max(tr.from_voltage_kv or 0, tr.to_voltage_kv or 0)

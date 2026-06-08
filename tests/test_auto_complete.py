@@ -111,6 +111,8 @@ from esfex.visualization.workflows.grid_mapping_steps import (  # noqa: E402
     _audit_all_transformers,
     _audit_all_converters,
     iterative_auto_connect,
+    _BusNN,
+    _find_nearest_hv_bus_in,
 )
 
 
@@ -203,6 +205,15 @@ class MockGuiModel:
     def remove_line(self, line_id: str):
         self.state.transmission_lines = [
             ln for ln in self.state.transmission_lines if ln.line_id != line_id
+        ]
+
+    def remove_lines(self, line_ids):
+        ids = set(line_ids)
+        if not ids:
+            return
+        self.state.transmission_lines = [
+            ln for ln in self.state.transmission_lines
+            if ln.line_id not in ids
         ]
 
     def remove_bus(self, bus_id: str):
@@ -1948,3 +1959,124 @@ class TestCheckConnectivityEdgeCases:
         state = _make_state(buses={})
         issues = _check_connectivity(state)
         assert issues == []
+
+
+# ======================================================================
+# Spatial nearest-bus index (_BusNN) — correctness + scaling regression
+# ======================================================================
+
+
+class TestBusNN:
+    """The KD-tree index must match the brute-force scan it replaces, and
+    keep disconnected-component bridging out of O(n²) on large networks."""
+
+    def _scatter(self, n, *, seed=0, voltages=(110.0, 220.0)):
+        import random
+        rng = random.Random(seed)
+        buses = {}
+        for i in range(n):
+            bid = f"b{i}"
+            buses[bid] = GuiBus(
+                bus_id=bid, name=bid, parent_node=0,
+                voltage_kv=voltages[i % len(voltages)],
+                latitude=20 + rng.random() * 20,
+                longitude=130 + rng.random() * 20,
+            )
+        return _make_state(buses=buses)
+
+    def test_nearest_matches_bruteforce_no_filter(self):
+        state = self._scatter(400, seed=1)
+        nn = _BusNN(state, set(state.buses.keys()))
+        import random
+        rng = random.Random(99)
+        for _ in range(30):
+            lat = 20 + rng.random() * 20
+            lng = 130 + rng.random() * 20
+            got_id, _ = nn.nearest(lat, lng)
+            # brute force (same haversine the scan uses)
+            from esfex.visualization.workflows.grid_mapping_steps import (
+                _haversine_km,
+            )
+            best = min(
+                state.buses.items(),
+                key=lambda kv: _haversine_km(
+                    lat, lng, kv[1].latitude, kv[1].longitude),
+            )[0]
+            assert got_id == best
+
+    def test_nearest_matches_bruteforce_voltage_filter(self):
+        state = self._scatter(400, seed=2, voltages=(0.48, 110.0, 220.0))
+        nn = _BusNN(state, set(state.buses.keys()))
+        ref_id, _ = _find_nearest_hv_bus_in(
+            state, 30.0, 140.0, set(state.buses.keys()), min_voltage_kv=50.0)
+        got_id, _ = nn.nearest(30.0, 140.0, min_voltage_kv=50.0)
+        assert got_id == ref_id
+        # the chosen bus must actually pass the filter
+        assert state.buses[got_id].voltage_kv > 50.0
+
+    def test_added_buses_are_searchable(self):
+        state = self._scatter(50, seed=3)
+        nn = _BusNN(state, set(state.buses.keys()))
+        # add a bus much closer to the query than any existing one
+        state.buses["close"] = GuiBus(
+            bus_id="close", name="close", parent_node=0, voltage_kv=110.0,
+            latitude=30.0, longitude=140.0)
+        nn.add("close")
+        got_id, dist = nn.nearest(30.0, 140.0)
+        assert got_id == "close"
+        assert dist < 1.0
+
+    def test_disconnected_bridging_scales(self):
+        """Many isolated 1-bus components bridged to a big main component
+        must stay fast — the old all-pairs scan was O(components·main)."""
+        import time
+        import random
+        from esfex.visualization.workflows.grid_mapping_steps import (
+            _fix_disconnected_components, _build_bus_adjacency,
+            _find_connected_components,
+        )
+        from esfex.visualization.data.gui_model import (
+            GuiTransmissionLine, EndpointRef,
+        )
+        rng = random.Random(7)
+        buses = {}
+        lines = []
+        # one big connected component: a chain of 1500 buses
+        prev = None
+        for i in range(1500):
+            bid = f"main{i}"
+            buses[bid] = GuiBus(
+                bus_id=bid, name=bid, parent_node=0, voltage_kv=110.0,
+                latitude=20 + rng.random() * 20,
+                longitude=130 + rng.random() * 20)
+            if prev is not None:
+                lines.append(GuiTransmissionLine(
+                    line_id=f"ml{i}", from_bus=prev, to_bus=bid,
+                    capacity_mw=100.0, voltage_kv=110.0,
+                    from_endpoint=EndpointRef("bus", prev),
+                    to_endpoint=EndpointRef("bus", bid)))
+            prev = bid
+        # 400 isolated single buses (empty components)
+        iso_ids = []
+        for j in range(400):
+            bid = f"iso{j}"
+            iso_ids.append(bid)
+            buses[bid] = GuiBus(
+                bus_id=bid, name=bid, parent_node=0, voltage_kv=110.0,
+                latitude=20 + rng.random() * 20,
+                longitude=130 + rng.random() * 20)
+        state = _make_state(buses=buses, transmission_lines=lines)
+        model = MockGuiModel(state)
+        adj = _build_bus_adjacency(state)
+        comps = _find_connected_components(adj)
+        main = max(comps, key=len)
+        issues = [
+            {"component": {bid}, "equipment": []}
+            for bid in iso_ids if bid not in main
+        ]
+        t0 = time.time()
+        created, _log = _fix_disconnected_components(
+            model, state, issues, max_connection_km=float("inf"))
+        elapsed = time.time() - t0
+        assert created == len(issues)  # every isolated bus bridged
+        assert elapsed < 5.0, f"bridging too slow ({elapsed:.1f}s)"

@@ -1593,3 +1593,65 @@ def test_build_fills_node_reserves_and_losses():
         assert n.losses > 0, f"node {n.index} has zero losses"
         assert n.reserve_static > 0 and n.reserve_dynamic > 0, \
             f"node {n.index} has zero reserves"
+
+
+def test_build_scales_subquadratically():
+    """The build must not be O(features x buses): a country-scale feature set
+    (which used to take 30+ minutes / appeared hung at 'Building network…')
+    completes in seconds thanks to the spatial bus grid + node KD-tree.
+    Generous bound to stay robust on slow CI; the real time is ~1 s."""
+    import time
+    import random
+    from esfex.visualization.data.gui_model import GuiNode
+
+    model = MockGuiModel(_make_state(buses={}))
+    model.state.nodes = []
+    for i in range(200):
+        model.state.nodes.append(GuiNode(
+            index=i, name=f"N{i}",
+            centroid_lat=24 + i * 0.05, centroid_lng=122 + (i % 30) * 0.6))
+    rng = random.Random(1)
+    feats = [_feat("substation", name="S1", voltage_kv=220.0)]  # placeholder
+    feats = []
+    for i in range(4000):
+        lat = 24 + rng.random() * 21
+        lng = 122 + rng.random() * 23
+        feats.append(_feat("substation", name=f"S{i}", voltage_kv=220.0,
+                           lat=lat, lng=lng))
+        feats.append(_feat("line", name=f"L{i}", voltage_kv=220.0,
+                           line_coords=[(lat, lng), (lat + 0.1, lng + 0.1)]))
+    t0 = time.time()
+    res = gmb.build_grid_from_features(model, feats)
+    elapsed = time.time() - t0
+    assert res.buses_added > 0
+    assert elapsed < 20.0, f"build too slow ({elapsed:.1f}s) — O(n^2) regression?"
+
+
+def test_spatial_bus_index_matches_linear_scan():
+    """The grid-indexed nearest-bus must return the same bus a full scan would."""
+    from esfex.visualization.data import geo_asset_parser as gap
+    from esfex.visualization.data.gui_model import GuiBus
+
+    state = _make_state(buses={}).__class__(name="S")
+    # scatter buses, all at 220 kV
+    import random
+    rng = random.Random(0)
+    for i in range(300):
+        bid = f"bus_{i}"
+        state.buses[bid] = GuiBus(
+            bus_id=bid, name=bid, parent_node=0, voltage_kv=220.0,
+            latitude=20 + rng.random() * 20, longitude=-85 + rng.random() * 20)
+    # query several points; compare grid result to a brute-force scan
+    for _ in range(20):
+        lat = 20 + rng.random() * 20
+        lng = -85 + rng.random() * 20
+        gid, gdist = gap._find_nearest_bus(lat, lng, state, _snap_km=5.0,
+                                           voltage_kv=220.0)
+        # brute force
+        best = min(state.buses.items(),
+                   key=lambda kv: gap._haversine_km(lat, lng,
+                                                    kv[1].latitude, kv[1].longitude))
+        bdist = gap._haversine_km(lat, lng, best[1].latitude, best[1].longitude)
+        # within the search window the grid must find the true nearest
+        if bdist <= 5.0 / 111.0 + 0.5:
+            assert gid == best[0]

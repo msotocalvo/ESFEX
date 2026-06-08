@@ -9,6 +9,7 @@ import heapq
 import json
 import logging
 import math
+import time
 from collections import deque
 from pathlib import Path
 
@@ -1637,9 +1638,11 @@ class GridMappingBuildStep(QWidget):
             # lines created by the build don't each render synchronously and
             # freeze the UI; the final stateLoaded (in _run_auto_connect)
             # repaints the whole network once.
+            self._phase_timings = []
             self._model.blockSignals(True)
             try:
                 with self._model.suspend_checkpoints():
+                    _t0 = time.perf_counter()
                     result = build_grid_from_features(
                         model=self._model,
                         features=self._features,
@@ -1647,6 +1650,9 @@ class GridMappingBuildStep(QWidget):
                         snap_threshold_km=self._config.get("snap_threshold_km", 5.0),
                         target_node=None,
                     )
+                    _dt = time.perf_counter() - _t0
+                    self._phase_timings.append(("Build network", _dt))
+                    logger.info("Grid build phase 'Build network': %.1fs", _dt)
             finally:
                 self._model.blockSignals(False)
 
@@ -1692,15 +1698,30 @@ class GridMappingBuildStep(QWidget):
         island_summary = ""
         n_created = 0
 
+        if not hasattr(self, "_phase_timings"):
+            self._phase_timings = []
+
+        def _timed(label, fn):
+            _t0 = time.perf_counter()
+            try:
+                return fn()
+            finally:
+                _dt = time.perf_counter() - _t0
+                self._phase_timings.append((label, _dt))
+                logger.info("Grid build phase '%s': %.1fs", label, _dt)
+
         try:
             # Phase 1: auto-connect
             with self._model.suspend_checkpoints():
-                n_created, connect_log = iterative_auto_connect(
-                    self._model, self._model.state,
-                    max_iterations=self._spin_max_iter.value(),
-                    voltage_mismatch_ratio=self._spin_voltage_ratio.value(),
-                    lv_voltage_kv=self._spin_lv_voltage.value(),
-                    max_connection_km=self._spin_max_distance.value(),
+                n_created, connect_log = _timed(
+                    "Auto-connect",
+                    lambda: iterative_auto_connect(
+                        self._model, self._model.state,
+                        max_iterations=self._spin_max_iter.value(),
+                        voltage_mismatch_ratio=self._spin_voltage_ratio.value(),
+                        lv_voltage_kv=self._spin_lv_voltage.value(),
+                        max_connection_km=self._spin_max_distance.value(),
+                    ),
                 )
             connect_summary = "\n".join(connect_log)
 
@@ -1712,7 +1733,10 @@ class GridMappingBuildStep(QWidget):
                 infer_electrical_params,
             )
             with self._model.suspend_checkpoints():
-                infer_report = infer_electrical_params(self._model.state)
+                infer_report = _timed(
+                    "Parameter inference",
+                    lambda: infer_electrical_params(self._model.state),
+                )
             connect_summary = (
                 connect_summary
                 + ("\n" if connect_summary else "")
@@ -1725,8 +1749,11 @@ class GridMappingBuildStep(QWidget):
                 f"Simplifying (level {level})..."
             )
             with self._model.suspend_checkpoints():
-                simp_log, _issues = apply_simplification_level(
-                    self._model, level, SimplificationConfig(),
+                simp_log, _issues = _timed(
+                    f"Simplification (level {level})",
+                    lambda: apply_simplification_level(
+                        self._model, level, SimplificationConfig(),
+                    ),
                 )
             simplify_summary = "\n".join(simp_log)
 
@@ -1735,9 +1762,12 @@ class GridMappingBuildStep(QWidget):
             # user can diagnose why "isolated" elements survive.
             min_size = self._spin_min_component.value()
             with self._model.suspend_checkpoints():
-                counts = drop_isolated_components(
-                    self._model.state, min_buses=min_size,
-                    keep_largest=True,
+                counts = _timed(
+                    "Drop isolated components",
+                    lambda: drop_isolated_components(
+                        self._model.state, min_buses=min_size,
+                        keep_largest=True,
+                    ),
                 )
             island_lines: list[str] = []
             n_total = counts.get("_components_total", 0)
@@ -1775,7 +1805,10 @@ class GridMappingBuildStep(QWidget):
             # missing bus dies now. Catches ghosts left by every
             # earlier step (simplification, prune, equipment merge).
             with self._model.suspend_checkpoints():
-                ref_counts = drop_dangling_refs(self._model.state)
+                ref_counts = _timed(
+                    "Drop dangling refs",
+                    lambda: drop_dangling_refs(self._model.state),
+                )
             n_dangling = sum(ref_counts.values())
             if n_dangling > 0:
                 island_lines.append(
@@ -1796,7 +1829,10 @@ class GridMappingBuildStep(QWidget):
             # the bus graph can be fully connected but the map shows
             # transformers as floating dots between unconnected buses.
             with self._model.suspend_checkpoints():
-                n_wires = rebuild_visual_wire_lines(self._model.state)
+                n_wires = _timed(
+                    "Rebuild visual wires",
+                    lambda: rebuild_visual_wire_lines(self._model.state),
+                )
             if n_wires:
                 island_lines.append(
                     f"Rebuilt {n_wires} visual wire-line(s) "
@@ -1868,6 +1904,13 @@ class GridMappingBuildStep(QWidget):
             sections.append("\u2500\u2500 Simplification \u2500\u2500\n" + simplify_summary)
         if island_summary:
             sections.append("\u2500\u2500 Isolated Cleanup \u2500\u2500\n" + island_summary)
+        timings = getattr(self, "_phase_timings", None)
+        if timings:
+            total_s = sum(dt for _, dt in timings)
+            timing_lines = [f"  {label}: {dt:.1f}s" for label, dt in timings]
+            timing_lines.append(f"  Total: {total_s:.1f}s")
+            sections.append(
+                "\u2500\u2500 Timing \u2500\u2500\n" + "\n".join(timing_lines))
         self._result_text.setPlainText("\n\n".join(sections))
 
         self._connected = True
@@ -3008,6 +3051,11 @@ def _fix_disconnected_components(
     components = _find_connected_components(adj)
     main_comp = max(components, key=len) if components else set()
 
+    # Spatial index over the main component so each bridge/equipment search
+    # is O(log n) instead of scanning every main-component bus. Kept hot
+    # across all issues; grows as components merge in.
+    nn_main = _BusNN(state, main_comp)
+
     log: list[str] = []
     created = 0
 
@@ -3043,9 +3091,8 @@ def _fix_disconnected_components(
                 # Find nearest HV bus strictly in the main component.
                 # If beyond max_connection_km, skip — local connections
                 # are handled by _fix_unchained_equipment later.
-                best_hv, best_dist = _find_nearest_hv_bus_in(
-                    state, eq_lat, eq_lng,
-                    candidates=main_comp, min_voltage_kv=DEFAULT_LV_KV,
+                best_hv, best_dist = nn_main.nearest(
+                    eq_lat, eq_lng, min_voltage_kv=DEFAULT_LV_KV,
                 )
 
                 if best_hv is None or best_dist > max_connection_km:
@@ -3175,9 +3222,20 @@ def _fix_disconnected_components(
 
         else:
             # ── Empty component: bus-to-bus bridge ───────────────
-            best_iso, best_main_bid, best_dist = _find_closest_bus_pair(
-                state, comp, main_comp,
-            )
+            # Query the main-component index with each (small) isolated-
+            # component bus; keep the closest pair. O(|comp|·log n) vs the
+            # old O(|comp|·|main|) all-pairs scan.
+            best_iso = best_main_bid = None
+            best_dist = float("inf")
+            for bid in comp:
+                b = state.buses.get(bid)
+                if not b or (b.latitude == 0.0 and b.longitude == 0.0):
+                    continue
+                cand, d = nn_main.nearest(b.latitude, b.longitude)
+                if cand is not None and d < best_dist:
+                    best_dist = d
+                    best_iso = bid
+                    best_main_bid = cand
             if best_iso is None or best_main_bid is None:
                 log.append(
                     f"  Empty component ({len(comp)} buses): "
@@ -3216,7 +3274,9 @@ def _fix_disconnected_components(
                 f"  [{best_dist:.1f} km, {cap:.0f} MW]"
             )
 
-        # Merge into main for subsequent issues.
+        # Merge into main for subsequent issues (set + spatial index).
+        for bid in comp:
+            nn_main.add(bid)
         main_comp.update(comp)
 
     return created, log
@@ -3239,6 +3299,12 @@ def _fix_voltage_mismatches(
     log: list[str] = []
     created = 0
 
+    # O(1) line lookup + deferred batch removal: removing each fixed line via
+    # model.remove_line (an O(L) list rebuild) per issue is O(L²) on large
+    # networks. Index once, collect removals, drop them in a single pass.
+    lines_by_id = {ln.line_id: ln for ln in state.transmission_lines}
+    to_remove: set[str] = set()
+
     for issue in issues:
         line_id = issue["line_id"]
         from_bus_id = issue["from_bus"]
@@ -3247,11 +3313,9 @@ def _fix_voltage_mismatches(
         v_to = issue["v_to"]
 
         # Verify line still exists (previous fix may have removed it).
-        ln = None
-        for candidate in state.transmission_lines:
-            if candidate.line_id == line_id:
-                ln = candidate
-                break
+        if line_id in to_remove:
+            continue
+        ln = lines_by_id.get(line_id)
         if ln is None:
             continue
 
@@ -3277,8 +3341,8 @@ def _fix_voltage_mismatches(
         tr_lng = (hv_bus.longitude + lv_bus.longitude) / 2
 
         try:
-            # Remove the direct line.
-            model.remove_line(line_id)
+            # Schedule the direct line for removal (batched after the loop).
+            to_remove.add(line_id)
 
             # Create transformer.
             tr_idx = model.add_transformer(
@@ -3318,6 +3382,9 @@ def _fix_voltage_mismatches(
             log.append(f"  Error fixing voltage {line_id}: {exc}")
             logger.exception("Voltage fix error for line %s", line_id)
 
+    # Drop all replaced direct lines in one O(L) pass.
+    model.remove_lines(to_remove)
+
     return created, log
 
 
@@ -3354,6 +3421,27 @@ def _fix_unchained_equipment(
     components = _find_connected_components(adj)
     main_comp = max(components, key=len) if components else set()
 
+    # Spatial index over the main component (O(log n) HV-bus search per
+    # equipment item instead of scanning every main-component bus). The
+    # all-buses fallback index is built lazily — only HV buses present at
+    # the start matter as targets (this loop creates only LV buses).
+    nn_main = _BusNN(state, main_comp)
+    nn_all = None
+
+    # Index existing connection lines by their from_endpoint ONCE, and defer
+    # removals to a single batch pass. Scanning every line per equipment and
+    # removing one-by-one (each an O(L) rebuild) was O(E·L) — quadratic. New
+    # chain lines get fresh ids absent from the removal set, so deferring is
+    # safe.
+    lines_by_from_ep: dict[tuple, list[str]] = {}
+    for ln in state.transmission_lines:
+        if ln.from_endpoint:
+            lines_by_from_ep.setdefault(
+                (ln.from_endpoint.element_type, ln.from_endpoint.element_id),
+                [],
+            ).append(ln.line_id)
+    to_remove_all: set[str] = set()
+
     for audit in failed_audits:
         etype = audit["etype"]
         eid = audit["eid"]
@@ -3364,17 +3452,7 @@ def _fix_unchained_equipment(
         # Only remove lines whose from_endpoint matches this equipment
         # to avoid duplicate connection lines. Orphaned LV buses and
         # transformers will be cleaned up by the simplify step.
-        lines_to_remove = [
-            ln.line_id for ln in state.transmission_lines
-            if (ln.from_endpoint
-                and ln.from_endpoint.element_type == etype
-                and ln.from_endpoint.element_id == eid)
-        ]
-        for lid in lines_to_remove:
-            try:
-                model.remove_line(lid)
-            except Exception:
-                pass
+        to_remove_all.update(lines_by_from_ep.get((etype, eid), ()))
 
         # ── 2. Get coordinates ────────────────────────────────────
         lat = getattr(obj, "latitude", 0.0)
@@ -3392,21 +3470,18 @@ def _fix_unchained_equipment(
             continue
 
         # ── 3. Find nearest HV bus in main component ─────────────
-        target_id, dist_km = _find_nearest_hv_bus_in(
-            state, lat, lng,
-            candidates=main_comp,
-            min_voltage_kv=lv_voltage_kv,
+        target_id, dist_km = nn_main.nearest(
+            lat, lng, min_voltage_kv=lv_voltage_kv,
         )
 
         # If beyond max distance, search ALL buses within range
         # (allows connecting to local island networks).
         if (target_id is None
                 or dist_km > max_connection_km):
-            all_buses = set(state.buses.keys())
-            target_id, dist_km = _find_nearest_hv_bus_in(
-                state, lat, lng,
-                candidates=all_buses,
-                min_voltage_kv=lv_voltage_kv,
+            if nn_all is None:
+                nn_all = _BusNN(state, set(state.buses.keys()))
+            target_id, dist_km = nn_all.nearest(
+                lat, lng, min_voltage_kv=lv_voltage_kv,
             )
             if target_id is not None and dist_km > max_connection_km:
                 target_id = None
@@ -3510,6 +3585,9 @@ def _fix_unchained_equipment(
             logger.exception(
                 "Chain creation error for %s %s", etype, eid,
             )
+
+    # Drop all superseded equipment connection lines in one O(L) pass.
+    model.remove_lines(to_remove_all)
 
     return created, log
 
@@ -3738,6 +3816,121 @@ def _find_closest_bus_pair(
                 best_a = a_bid
                 best_b = b_bid
     return best_a, best_b, best_dist
+
+
+class _BusNN:
+    """Spatial nearest-bus index over a candidate set of bus IDs.
+
+    Replaces the O(n) linear scans in :func:`_find_closest_bus_pair` and
+    :func:`_find_nearest_hv_bus_in` — which made disconnected-component
+    bridging and equipment chaining O(n²) and hung the build on
+    country-scale networks (e.g. Japan, ~20k buses → 12+ min) — with KD-tree
+    queries on an equirectangular projection.  Buses can be added as
+    components merge; the tree is rebuilt once enough have accumulated.
+    Falls back to an exact linear scan when SciPy is unavailable.
+    """
+
+    _REBUILD_SLACK = 256
+
+    def __init__(self, state, candidates):
+        self._state = state
+        try:
+            from scipy.spatial import cKDTree
+            self._cKDTree = cKDTree
+        except Exception:
+            self._cKDTree = None
+        self._build(list(candidates))
+
+    def _build(self, bids):
+        st = self._state
+        ids: list[str] = []
+        lats: list[float] = []
+        lngs: list[float] = []
+        for bid in bids:
+            b = st.buses.get(bid)
+            if not b or (b.latitude == 0.0 and b.longitude == 0.0):
+                continue
+            ids.append(bid)
+            lats.append(b.latitude)
+            lngs.append(b.longitude)
+        self._ids = ids
+        self._extra: list[str] = []  # added since the last (re)build
+        self._tree = None
+        if self._cKDTree is not None and ids:
+            lat_arr = np.asarray(lats, dtype=float)
+            lng_arr = np.asarray(lngs, dtype=float)
+            # Equirectangular projection: scale lng by cos(mean lat) so plain
+            # Euclidean distance tracks great-circle distance closely over a
+            # country-sized region (the exact winner is refined by haversine).
+            self._coslat = math.cos(math.radians(float(lat_arr.mean())))
+            proj = np.column_stack((lat_arr, lng_arr * self._coslat))
+            self._tree = self._cKDTree(proj)
+
+    def add(self, bid: str) -> None:
+        b = self._state.buses.get(bid)
+        if not b or (b.latitude == 0.0 and b.longitude == 0.0):
+            return
+        self._extra.append(bid)
+        if len(self._extra) > self._REBUILD_SLACK:
+            self._build(self._ids + self._extra)
+
+    def _scan(self, ids, lat, lng, min_voltage_kv):
+        st = self._state
+        best_id = None
+        best_dist = float("inf")
+        for bid in ids:
+            b = st.buses.get(bid)
+            if not b or (b.latitude == 0.0 and b.longitude == 0.0):
+                continue
+            if min_voltage_kv is not None and b.voltage_kv <= min_voltage_kv:
+                continue
+            d = _haversine_km(lat, lng, b.latitude, b.longitude)
+            if d < best_dist:
+                best_dist = d
+                best_id = bid
+        return best_id, best_dist
+
+    def nearest(self, lat, lng, min_voltage_kv=None):
+        """Nearest candidate bus to ``(lat, lng)`` → ``(bus_id, dist_km)``."""
+        best_id = None
+        best_dist = float("inf")
+        if self._tree is not None and self._ids:
+            n = len(self._ids)
+            # No voltage filter → the projected nearest IS the answer (k=1).
+            # With a filter, widen k so a filtered-out nearest neighbour does
+            # not mask a valid bus just behind it.
+            k = 1 if min_voltage_kv is None else min(32, n)
+            q = np.array([lat, lng * self._coslat])
+            _dd, ii = self._tree.query(q, k=k)
+            idxs = [int(ii)] if k == 1 else [int(x) for x in np.atleast_1d(ii)]
+            for i in idxs:
+                if i < 0 or i >= n:
+                    continue
+                bid = self._ids[i]
+                b = self._state.buses.get(bid)
+                if not b:
+                    continue
+                if (min_voltage_kv is not None
+                        and b.voltage_kv <= min_voltage_kv):
+                    continue
+                d = _haversine_km(lat, lng, b.latitude, b.longitude)
+                if d < best_dist:
+                    best_dist = d
+                    best_id = bid
+            # Voltage filter eliminated all k nearest → exact fallback scan
+            # over the full tree set (rare on real networks).
+            if best_id is None and min_voltage_kv is not None:
+                best_id, best_dist = self._scan(
+                    self._ids, lat, lng, min_voltage_kv)
+        else:
+            best_id, best_dist = self._scan(
+                self._ids, lat, lng, min_voltage_kv)
+        # Recently-added buses not yet folded into the tree (small list).
+        if self._extra:
+            e_id, e_dist = self._scan(self._extra, lat, lng, min_voltage_kv)
+            if e_dist < best_dist:
+                best_id, best_dist = e_id, e_dist
+        return best_id, best_dist
 
 
 def _estimate_bridge_capacity(voltage_kv: float) -> float:
