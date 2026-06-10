@@ -1099,12 +1099,14 @@ class TestConfigToGlobalSettings:
         raw_dict = {
             "visual_scaling": {
                 "marker_min_px": 10.0,
-                "electrical_marker_scale": 0.05,
+                "marker_max_px": 55.0,
+                "marker_transform": "log",
             }
         }
         gs = config_to_global_settings(config, raw_dict=raw_dict)
         assert gs.visual_scaling.marker_min_px == pytest.approx(10.0)
-        assert gs.visual_scaling.electrical_marker_scale == pytest.approx(0.05)
+        assert gs.visual_scaling.marker_max_px == pytest.approx(55.0)
+        assert gs.visual_scaling.marker_transform == "log"
 
 
 # =====================================================================
@@ -1416,14 +1418,14 @@ class TestGlobalSettingsToConfigDict:
         gs = GuiGlobalSettings(
             visual_scaling=GuiVisualScaling(
                 marker_min_px=10.0,
-                electrical_marker_scale=0.05,
+                marker_max_px=55.0,
             )
         )
         d: dict[str, Any] = {}
         global_settings_to_config_dict(gs, d)
         vs = d["visual_scaling"]
         assert vs["marker_min_px"] == pytest.approx(10.0)
-        assert vs["electrical_marker_scale"] == pytest.approx(0.05)
+        assert vs["marker_max_px"] == pytest.approx(55.0)
 
     def test_preserves_existing_keys(self):
         gs = GuiGlobalSettings()

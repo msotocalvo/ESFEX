@@ -542,11 +542,11 @@ def test_global_settings_solver_options_only_when_present():
 
 def test_global_settings_visual_scaling_written():
     g = GuiGlobalSettings()
-    g.visual_scaling = GuiVisualScaling(marker_min_px=9.0, fuel_line_scale=0.3)
+    g.visual_scaling = GuiVisualScaling(marker_min_px=9.0, line_max_px=12.0)
     cd = {}
     S.global_settings_to_config_dict(g, cd)
     assert cd["visual_scaling"]["marker_min_px"] == 9.0
-    assert cd["visual_scaling"]["fuel_line_scale"] == 0.3
+    assert cd["visual_scaling"]["line_max_px"] == 12.0
 
 
 def test_global_settings_setdefault_preserves_existing_logging():

@@ -685,29 +685,28 @@ class GlobalSettingsForm(QWidget):
         vsl.setContentsMargins(6, 6, 6, 6)
         vsl.setSpacing(4)
 
+        # Auto-fit: the renderer maps each element class's actual value range
+        # onto [min, max] px, so no per-system scale factors are needed — only
+        # the visible pixel band and a perceptual transform for markers.
         self._vs_marker_min = QDoubleSpinBox()
         self._vs_marker_min.setRange(1, 100)
         self._vs_marker_min.setDecimals(1)
         self._vs_marker_min.editingFinished.connect(self._on_changed)
         vsl.addRow(tr("global_form.vs_marker_min"), self._vs_marker_min)
 
-        self._vs_elec_marker = QDoubleSpinBox()
-        self._vs_elec_marker.setRange(0.0001, 10.0)
-        self._vs_elec_marker.setDecimals(4)
-        self._vs_elec_marker.editingFinished.connect(self._on_changed)
-        vsl.addRow(tr("global_form.vs_elec_marker"), self._vs_elec_marker)
+        self._vs_marker_max = QDoubleSpinBox()
+        self._vs_marker_max.setRange(2, 200)
+        self._vs_marker_max.setDecimals(1)
+        self._vs_marker_max.editingFinished.connect(self._on_changed)
+        vsl.addRow(tr("global_form.vs_marker_max"), self._vs_marker_max)
 
-        self._vs_energy_marker = QDoubleSpinBox()
-        self._vs_energy_marker.setRange(0.0001, 10.0)
-        self._vs_energy_marker.setDecimals(4)
-        self._vs_energy_marker.editingFinished.connect(self._on_changed)
-        vsl.addRow(tr("global_form.vs_energy_marker"), self._vs_energy_marker)
-
-        self._vs_fuel_marker = QDoubleSpinBox()
-        self._vs_fuel_marker.setRange(0.0001, 100.0)
-        self._vs_fuel_marker.setDecimals(4)
-        self._vs_fuel_marker.editingFinished.connect(self._on_changed)
-        vsl.addRow(tr("global_form.vs_fuel_marker"), self._vs_fuel_marker)
+        self._vs_transform = QComboBox()
+        # (label key, stored value)
+        self._vs_transform.addItem(tr("global_form.vs_transform_sqrt"), "sqrt")
+        self._vs_transform.addItem(tr("global_form.vs_transform_linear"), "linear")
+        self._vs_transform.addItem(tr("global_form.vs_transform_log"), "log")
+        self._vs_transform.currentIndexChanged.connect(self._on_changed)
+        vsl.addRow(tr("global_form.vs_transform"), self._vs_transform)
 
         self._vs_line_min = QDoubleSpinBox()
         self._vs_line_min.setRange(0.5, 50)
@@ -715,17 +714,11 @@ class GlobalSettingsForm(QWidget):
         self._vs_line_min.editingFinished.connect(self._on_changed)
         vsl.addRow(tr("global_form.vs_line_min"), self._vs_line_min)
 
-        self._vs_elec_line = QDoubleSpinBox()
-        self._vs_elec_line.setRange(0.0001, 10.0)
-        self._vs_elec_line.setDecimals(4)
-        self._vs_elec_line.editingFinished.connect(self._on_changed)
-        vsl.addRow(tr("global_form.vs_elec_line"), self._vs_elec_line)
-
-        self._vs_fuel_line = QDoubleSpinBox()
-        self._vs_fuel_line.setRange(0.0001, 100.0)
-        self._vs_fuel_line.setDecimals(4)
-        self._vs_fuel_line.editingFinished.connect(self._on_changed)
-        vsl.addRow(tr("global_form.vs_fuel_line"), self._vs_fuel_line)
+        self._vs_line_max = QDoubleSpinBox()
+        self._vs_line_max.setRange(1, 100)
+        self._vs_line_max.setDecimals(1)
+        self._vs_line_max.editingFinished.connect(self._on_changed)
+        vsl.addRow(tr("global_form.vs_line_max"), self._vs_line_max)
 
         # ─── Final section ordering ──────────────────────────────────
         # Master Problem now lives RIGHT AFTER Power Flow (closer to
@@ -913,12 +906,11 @@ class GlobalSettingsForm(QWidget):
         # Visual Scaling
         vs = g.visual_scaling
         self._vs_marker_min.setValue(vs.marker_min_px)
-        self._vs_elec_marker.setValue(vs.electrical_marker_scale)
-        self._vs_energy_marker.setValue(vs.energy_marker_scale)
-        self._vs_fuel_marker.setValue(vs.fuel_marker_scale)
+        self._vs_marker_max.setValue(vs.marker_max_px)
+        ti = self._vs_transform.findData(vs.marker_transform)
+        self._vs_transform.setCurrentIndex(ti if ti >= 0 else 0)
         self._vs_line_min.setValue(vs.line_min_px)
-        self._vs_elec_line.setValue(vs.electrical_line_scale)
-        self._vs_fuel_line.setValue(vs.fuel_line_scale)
+        self._vs_line_max.setValue(vs.line_max_px)
 
         # Power Flow (data on model.state — single GuiSystemState)
         st = self._model.state
@@ -1166,12 +1158,10 @@ class GlobalSettingsForm(QWidget):
         # Visual Scaling
         vs = g.visual_scaling
         vs.marker_min_px = self._vs_marker_min.value()
-        vs.electrical_marker_scale = self._vs_elec_marker.value()
-        vs.energy_marker_scale = self._vs_energy_marker.value()
-        vs.fuel_marker_scale = self._vs_fuel_marker.value()
+        vs.marker_max_px = self._vs_marker_max.value()
+        vs.marker_transform = self._vs_transform.currentData() or "sqrt"
         vs.line_min_px = self._vs_line_min.value()
-        vs.electrical_line_scale = self._vs_elec_line.value()
-        vs.fuel_line_scale = self._vs_fuel_line.value()
+        vs.line_max_px = self._vs_line_max.value()
 
         # Power Flow (stored on model.state — single GuiSystemState)
         st = self._model.state

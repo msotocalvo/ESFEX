@@ -910,12 +910,13 @@
     "mp_mga_objective_max_regional_equity": "Equidad regional",
     "mp_mga_objective_evolutionary_dist": "Distancia evolutiva",
     "vs_marker_min": "Tamaño Mín. Marcador (px):",
-    "vs_elec_marker": "Escala Eléctrica (px/MW):",
-    "vs_energy_marker": "Escala Energía (px/MWh):",
-    "vs_fuel_marker": "Escala Marcador Combustible (px/unid):",
+    "vs_marker_max": "Tamaño Máx. Marcador (px):",
+    "vs_transform": "Escalado de Marcadores:",
+    "vs_transform_sqrt": "Área ∝ valor (raíz)",
+    "vs_transform_linear": "Radio ∝ valor (lineal)",
+    "vs_transform_log": "Logarítmico (cola pesada)",
     "vs_line_min": "Ancho Mín. Línea (px):",
-    "vs_elec_line": "Escala Transmisión (px/MW):",
-    "vs_fuel_line": "Escala Línea Combustible (px/unid):",
+    "vs_line_max": "Ancho Máx. Línea (px):",
     "group_systems": "Sistemas a Simular"
   },
   "stochastic_form": {

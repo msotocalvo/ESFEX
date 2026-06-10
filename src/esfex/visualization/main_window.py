@@ -38,6 +38,7 @@ from esfex.visualization.data.gui_model import (
     GuiModel,
     GuiSystemState,
     VisualStyle,
+    normalize_px,
 )
 from esfex.visualization.data.serializer import (
     config_to_global_settings,
@@ -251,6 +252,7 @@ class MainWindow(QMainWindow):
         self._run_completed: bool = False  # True after successful run, cleared on changes
         self._clipboard: dict | None = None  # {"type": str, "attrs": dict}
         self._vs_cache = None  # cached visual_scaling, refreshed in _on_state_loaded
+        self._vs_ranges = None  # per-class (lo, hi) value ranges for auto-fit sizing
 
         from esfex.visualization.panels.collapse_button import add_collapse_button
 
@@ -5475,41 +5477,87 @@ class MainWindow(QMainWindow):
             self._vs_cache = self.model.global_settings.visual_scaling
         return self._vs_cache
 
-    # Hard ceiling on auto-computed marker size. Without this, a single
-    # huge fuel storage (e.g. 3 000 fuel units * 0.5 px/unit = 1 500 px)
-    # would render as a blob covering several zoom levels of the map.
-    _MARKER_MAX_PX: float = 40.0
+    @staticmethod
+    def _robust_range(values) -> tuple[float, float]:
+        """Robust (lo, hi) over positive values — P5/P95 so a couple of giants
+        don't squash everyone else; min/max fallback for tiny samples."""
+        import numpy as np
+        vals = [float(v) for v in values if v is not None and v > 0]
+        if not vals:
+            return (0.0, 0.0)
+        if len(vals) < 5:
+            return (min(vals), max(vals))
+        arr = np.asarray(vals, dtype=float)
+        lo = float(np.percentile(arr, 5))
+        hi = float(np.percentile(arr, 95))
+        if hi <= lo:
+            lo, hi = float(arr.min()), float(arr.max())
+        return (lo, hi)
+
+    def _compute_vs_ranges(self, state) -> dict:
+        """Measure the value range of each element class in the loaded system.
+        These ranges drive the auto-fit sizing (see :func:`normalize_px`), so no
+        per-system scale calibration is needed. Mirrors the value expressions
+        used at each render call site."""
+        elec = [g.rated_power for g in state.generators.values()]
+        elec += [(getattr(t, 'rated_power_mva', 0) or 0) for t in state.transformers]
+        elec += [e.rated_power for e in state.electrolyzers.values()]
+        elec += [c.rated_power_mva for c in state.acdc_converters]
+        elec += [c.rated_power_mva for c in state.freq_converters]
+        energy = [b.capacity for b in state.batteries.values()]
+        fuel = [sum(fp.max_import_rate for fp in fe.fuel_params.values())
+                for fe in state.fuel_entry_points]
+        fuel += [sum(fp.capacity for fp in fst.fuel_params.values())
+                 for fst in state.fuel_storages.values()]
+        eline = [ln.capacity_mw for ln in state.transmission_lines]
+        fline = [rt.capacity for rt in state.fuel_transport_routes]
+        for lk in self.model.inter_system_links:
+            if getattr(lk, 'link_type', 'transmission') == 'transmission':
+                eline.append(lk.capacity_mw or 0.0)
+            else:
+                fline.append(lk.capacity_mw or 0.0)
+        return {
+            "electrical_marker": self._robust_range(elec),
+            "energy_marker": self._robust_range(energy),
+            "fuel_marker": self._robust_range(fuel),
+            "electrical_line": self._robust_range(eline),
+            "fuel_line": self._robust_range(fline),
+        }
+
+    def _vs_range(self, cls: str) -> tuple[float, float]:
+        if self._vs_ranges is None:
+            self._vs_ranges = self._compute_vs_ranges(self.model.state)
+        return self._vs_ranges.get(cls, (0.0, 0.0))
 
     def _auto_electrical_marker(self, mw_or_mva: float) -> float:
         sc = self._get_vs()
-        return min(self._MARKER_MAX_PX,
-                   max(sc.marker_min_px, sc.electrical_marker_scale * mw_or_mva))
+        lo, hi = self._vs_range("electrical_marker")
+        return normalize_px(mw_or_mva, lo, hi, sc.marker_min_px,
+                            sc.marker_max_px, sc.marker_transform)
 
     def _auto_energy_marker(self, mwh: float) -> float:
         sc = self._get_vs()
-        return min(self._MARKER_MAX_PX,
-                   max(sc.marker_min_px, sc.energy_marker_scale * mwh))
+        lo, hi = self._vs_range("energy_marker")
+        return normalize_px(mwh, lo, hi, sc.marker_min_px,
+                            sc.marker_max_px, sc.marker_transform)
 
     def _auto_fuel_marker(self, fuel_units: float) -> float:
         sc = self._get_vs()
-        return min(self._MARKER_MAX_PX,
-                   max(sc.marker_min_px, sc.fuel_marker_scale * fuel_units))
-
-    # Hard ceiling on auto-computed line width.  Without this, a 10 GW
-    # transmission line could render at 50 px which is unusable.
-    _LINE_MAX_PX: float = 8.0
+        lo, hi = self._vs_range("fuel_marker")
+        return normalize_px(fuel_units, lo, hi, sc.marker_min_px,
+                            sc.marker_max_px, sc.marker_transform)
 
     def _auto_electrical_line(self, mw: float) -> float:
         sc = self._get_vs()
-        if mw <= 0:
-            return sc.line_min_px
-        return min(self._LINE_MAX_PX,
-                   max(sc.line_min_px, sc.electrical_line_scale * mw))
+        lo, hi = self._vs_range("electrical_line")
+        # Line widths read linearly (a 2× wider line ≈ 2× the value).
+        return normalize_px(mw, lo, hi, sc.line_min_px, sc.line_max_px, "linear")
 
     def _auto_fuel_line(self, fuel_units: float) -> float:
         sc = self._get_vs()
-        return min(self._LINE_MAX_PX,
-                   max(sc.line_min_px, sc.fuel_line_scale * fuel_units))
+        lo, hi = self._vs_range("fuel_line")
+        return normalize_px(fuel_units, lo, hi, sc.line_min_px,
+                            sc.line_max_px, "linear")
 
     def _effective_style(self, base_style, auto_size=None, auto_width=None):
         """Merge auto-computed size with user style. User values take precedence."""
@@ -5525,6 +5573,7 @@ class MainWindow(QMainWindow):
     def _on_visual_scaling_changed(self):
         """Re-render all map elements when global visual scaling parameters change."""
         self._vs_cache = None
+        self._vs_ranges = None
         self._on_state_loaded()
 
     def _style_dict(self, style) -> dict | None:
@@ -5627,6 +5676,9 @@ class MainWindow(QMainWindow):
 
         self._vs_cache = self.model.global_settings.visual_scaling
         state = self.model.state
+        # Recompute auto-fit value ranges for the freshly-loaded system so every
+        # element class maps onto the visible pixel band without calibration.
+        self._vs_ranges = self._compute_vs_ranges(state)
 
         # -- Collect all map elements into a single list --
         batch: list[dict] = []
@@ -6656,6 +6708,7 @@ class MainWindow(QMainWindow):
         # observe the swap.
         self.model.global_settings = config_to_global_settings(config, raw_dict=raw_dict)
         self._vs_cache = None
+        self._vs_ranges = None
         self.model.stochastic_scenarios = config_to_stochastic_scenarios(config)
 
         states = config_to_gui_states(config)

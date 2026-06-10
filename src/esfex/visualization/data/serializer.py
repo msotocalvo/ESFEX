@@ -2100,14 +2100,15 @@ def config_to_global_settings(
     # so it must be read from the raw YAML dict.
     vs_dict = (raw_dict or {}).get("visual_scaling")
     if isinstance(vs_dict, dict):
+        # Legacy YAMLs carry per-unit ``*_scale`` factors; those are obsolete
+        # (auto-fit replaces them) and are silently ignored — only the pixel
+        # band and the transform survive.
         g.visual_scaling = GuiVisualScaling(
             marker_min_px=vs_dict.get('marker_min_px', 6.0),
-            electrical_marker_scale=vs_dict.get('electrical_marker_scale', 0.02),
-            energy_marker_scale=vs_dict.get('energy_marker_scale', 0.02),
-            fuel_marker_scale=vs_dict.get('fuel_marker_scale', 0.5),
+            marker_max_px=vs_dict.get('marker_max_px', 40.0),
+            marker_transform=vs_dict.get('marker_transform', 'sqrt'),
             line_min_px=vs_dict.get('line_min_px', 1.5),
-            electrical_line_scale=vs_dict.get('electrical_line_scale', 0.005),
-            fuel_line_scale=vs_dict.get('fuel_line_scale', 0.1),
+            line_max_px=vs_dict.get('line_max_px', 8.0),
         )
 
     return g
@@ -2222,12 +2223,10 @@ def global_settings_to_config_dict(
     vs = g.visual_scaling
     config_dict["visual_scaling"] = {
         "marker_min_px": vs.marker_min_px,
-        "electrical_marker_scale": vs.electrical_marker_scale,
-        "energy_marker_scale": vs.energy_marker_scale,
-        "fuel_marker_scale": vs.fuel_marker_scale,
+        "marker_max_px": vs.marker_max_px,
+        "marker_transform": vs.marker_transform,
         "line_min_px": vs.line_min_px,
-        "electrical_line_scale": vs.electrical_line_scale,
-        "fuel_line_scale": vs.fuel_line_scale,
+        "line_max_px": vs.line_max_px,
     }
 
     # Risk & Resilience

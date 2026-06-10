@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -683,23 +684,63 @@ class GuiNonElectricDemand:
 
 @dataclass
 class GuiVisualScaling:
-    """Global scale factors for proportional visual scaling on the map.
+    """Auto-fit visual scaling for the map — no per-system calibration.
 
-    Final size = max(min_px, scale * element_attribute).
-    Separate scale factors for each unit domain (electrical, energy, fuel).
-    Adjust scale factors to match the region being analyzed.
+    Instead of absolute ``px-per-MW`` factors (which had to be hand-tuned for
+    every system so values landed in the visible band), the renderer measures
+    the actual value range of each element class in the loaded system and maps
+    it onto the pixel band ``[min_px, max_px]``: the smallest element renders at
+    ``min_px`` and the largest at ``max_px``, whether it's a tiny island or a
+    national grid. The only knobs are the universal pixel band and a perceptual
+    transform for markers (``sqrt`` makes a marker's *area* proportional to the
+    value, which is how the eye reads "size = magnitude").
+
+    See :func:`normalize_px`, which implements the mapping.
     """
 
-    # Markers
-    marker_min_px: float = 6.0               # floor for all markers
-    electrical_marker_scale: float = 0.02    # px/MW or px/MVA (gen, elz, tr, conv)
-    energy_marker_scale: float = 0.02        # px/MWh (batteries)
-    fuel_marker_scale: float = 0.5           # px/fuel-unit (fuel storage, fuel entry)
+    # Markers (nodes/generators/batteries/fuel/transformers/converters)
+    marker_min_px: float = 6.0               # smallest marker
+    marker_max_px: float = 40.0              # largest marker
+    marker_transform: str = "sqrt"           # "sqrt" | "linear" | "log"
 
-    # Lines
-    line_min_px: float = 1.5                 # floor for all lines
-    electrical_line_scale: float = 0.005     # px/MW (transmission lines)
-    fuel_line_scale: float = 0.1             # px/fuel-unit (fuel routes)
+    # Lines (transmission / fuel routes)
+    line_min_px: float = 1.5                 # thinnest line
+    line_max_px: float = 8.0                 # thickest line
+
+
+def normalize_px(
+    value: float,
+    lo: float,
+    hi: float,
+    min_px: float,
+    max_px: float,
+    transform: str = "sqrt",
+) -> float:
+    """Map ``value`` within the data range ``[lo, hi]`` onto ``[min_px, max_px]``.
+
+    Auto-fit: ``lo`` → ``min_px`` and ``hi`` → ``max_px`` so the result needs no
+    per-system calibration. ``transform`` warps the scale perceptually:
+    ``sqrt`` (area ∝ value, the default for markers), ``linear`` (size ∝ value,
+    used for line widths) or ``log`` (compresses heavy-tailed ranges). Values
+    at or below zero, or a degenerate range, fall back sensibly.
+    """
+    if value is None or value <= 0:
+        return min_px
+    if hi <= lo:
+        # All elements share one value → a neutral mid-band size.
+        return 0.5 * (min_px + max_px)
+
+    def _t(x: float) -> float:
+        if transform == "sqrt":
+            return math.sqrt(max(x, 0.0))
+        if transform == "log":
+            return math.log1p(max(x, 0.0))
+        return x  # linear
+
+    t_lo, t_hi, t_v = _t(lo), _t(hi), _t(value)
+    n = (t_v - t_lo) / (t_hi - t_lo) if t_hi > t_lo else 1.0
+    n = min(1.0, max(0.0, n))
+    return min_px + n * (max_px - min_px)
 
 
 @dataclass

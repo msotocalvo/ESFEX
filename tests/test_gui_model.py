@@ -76,6 +76,7 @@ from esfex.visualization.data.gui_model import (  # noqa: E402
     GuiTransformer,
     GuiTransmissionLine,
     GuiVisualScaling,
+    normalize_px,
     NodeTechnology,
     VisualStyle,
 )
@@ -1003,12 +1004,44 @@ class TestGuiVisualScaling:
     def test_defaults(self):
         vs = GuiVisualScaling()
         assert vs.marker_min_px == 6.0
-        assert vs.electrical_marker_scale == 0.02
-        assert vs.energy_marker_scale == 0.02
-        assert vs.fuel_marker_scale == 0.5
+        assert vs.marker_max_px == 40.0
+        assert vs.marker_transform == "sqrt"
         assert vs.line_min_px == 1.5
-        assert vs.electrical_line_scale == 0.005
-        assert vs.fuel_line_scale == 0.1
+        assert vs.line_max_px == 8.0
+
+
+class TestNormalizePx:
+    """Auto-fit mapping of a data range onto a pixel band."""
+
+    def test_endpoints_map_to_band(self):
+        # lo -> min_px, hi -> max_px (any transform).
+        for t in ("linear", "sqrt", "log"):
+            assert normalize_px(10.0, 10.0, 100.0, 6.0, 40.0, t) == pytest.approx(6.0)
+            assert normalize_px(100.0, 10.0, 100.0, 6.0, 40.0, t) == pytest.approx(40.0)
+
+    def test_monotonic_within_band(self):
+        a = normalize_px(20.0, 10.0, 100.0, 6.0, 40.0, "sqrt")
+        b = normalize_px(50.0, 10.0, 100.0, 6.0, 40.0, "sqrt")
+        assert 6.0 < a < b < 40.0
+
+    def test_linear_midpoint(self):
+        # Linear: value halfway in range -> halfway in band.
+        assert normalize_px(55.0, 10.0, 100.0, 0.0, 100.0, "linear") == pytest.approx(50.0)
+
+    def test_sqrt_is_area_proportional(self):
+        # With sqrt, normalized position tracks sqrt(value): for lo=0,
+        # value at 25% of hi maps to 50% of the band.
+        n = normalize_px(25.0, 0.0, 100.0, 0.0, 100.0, "sqrt")
+        assert n == pytest.approx(50.0)
+
+    def test_clamps_out_of_range(self):
+        assert normalize_px(500.0, 10.0, 100.0, 6.0, 40.0, "linear") == pytest.approx(40.0)
+
+    def test_nonpositive_and_degenerate(self):
+        assert normalize_px(0.0, 10.0, 100.0, 6.0, 40.0) == 6.0      # value<=0 -> floor
+        assert normalize_px(-5.0, 10.0, 100.0, 6.0, 40.0) == 6.0
+        # Degenerate range (all equal) -> neutral mid-band.
+        assert normalize_px(50.0, 50.0, 50.0, 6.0, 40.0) == pytest.approx(23.0)
 
 
 # ======================================================================
