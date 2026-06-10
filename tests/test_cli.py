@@ -543,3 +543,19 @@ class TestPluginCommands:
     def test_plugin_uninstall_help(self):
         result = runner.invoke(app, ["plugin", "uninstall", "--help"])
         assert result.exit_code == 0
+
+
+class TestModuleEntryPoint:
+    """``python -m esfex`` is the PATH-independent fallback for Windows users
+    whose ``Scripts\\`` directory is not on PATH; guard that it stays wired."""
+
+    def test_python_m_esfex_runs(self):
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "-m", "esfex", "--help"],
+            capture_output=True, text=True, timeout=120,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "studio" in result.stdout.lower()

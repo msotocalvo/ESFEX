@@ -187,6 +187,35 @@ pip install -e .
 
 The GIS Studio (PySide6) is included in the core install — no extra is required.
 
+### Windows: if `esfex` is "not recognized"
+
+`esfex` is a console script that pip installs into your environment's
+`Scripts\` folder. **pip does not modify `PATH`** — if that folder is not
+already on `PATH`, the `esfex` command will not be found (pip prints a yellow
+*"installed in '…\Scripts' which is not on PATH"* warning). This is common on
+Windows when Python was installed without **"Add Python to PATH"**, when the
+install fell back to a per-user location (`%AppData%\Roaming\Python\…\Scripts`),
+or with the Microsoft Store build of Python.
+
+The robust, `PATH`-independent way to launch ESFEX is to run it as a module —
+this only needs `python` itself on `PATH`:
+
+```bash
+python -m esfex studio          # equivalent to: esfex studio
+python -m esfex run -c my_system.yaml
+```
+
+Alternatively, install into a virtual environment and **activate it** (then
+`Scripts\` is on `PATH` for that shell), and remember that `PATH` changes are
+only picked up by **newly opened** terminals:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install esfex
+esfex studio
+```
+
 ### Optional dependency groups
 
 All runtime features — visualization, sensitivity analysis, resource
@@ -260,6 +289,9 @@ ESFEX ships with an interactive, map-based **Studio** for building and editing p
 esfex studio                     # start from a blank canvas
 esfex studio -c my_system.yaml   # open an existing configuration
 ```
+
+> On Windows, if `esfex` is "not recognized", launch it as a module instead:
+> `python -m esfex studio`. See [Installation → Windows](#windows-if-esfex-is-not-recognized).
 
 Place nodes, generators, batteries, and transmission lines directly on a Leaflet map with geographic routing, edit element parameters through validated forms, and run resource-assessment wizards (rooftop solar, utility PV via [solarex](https://github.com/Net-Zero-Horizon/solarex), wind via [windrex](https://github.com/Net-Zero-Horizon/windrex), OTEC via [OTEX](https://github.com/Net-Zero-Horizon/OTEX)) to generate availability profiles. The Studio writes standard ESFEX YAML that the CLI and Python API consume unchanged.
 
