@@ -1,0 +1,72 @@
+# Build the native Windows installer (conda `constructor`) and attach it to the
+# GitHub Release. Runs on tag pushes (v*) and can be triggered manually.
+#
+# The installer bundles a full conda environment (Python, Qt, Julia, the
+# GDAL/GEOS/PROJ stack) and pip-installs ESFEX on top, so end users need neither
+# Python nor Julia pre-installed and never hit the Scripts\-not-on-PATH issue —
+# a Start Menu "ESFEX Studio" shortcut launches `python -m esfex studio`.
+name: Windows installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version string for the installer (defaults to pyproject)"
+        required: false
+
+permissions:
+  contents: write          # upload the .exe as a release asset
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda (base) with constructor
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: ""
+
+      - name: Install constructor
+        shell: bash -el {0}
+        run: conda install -n base -y -c conda-forge constructor menuinst
+
+      - name: Sync installer version with pyproject.toml
+        shell: bash -el {0}
+        run: |
+          VER="${{ github.event.inputs.version }}"
+          if [ -z "$VER" ]; then
+            VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          fi
+          echo "Building installer for version $VER"
+          sed -i "s/^version: .*/version: \"$VER\"/" installer/construct.yaml
+          echo "ESFEX_VERSION=$VER" >> "$GITHUB_ENV"
+
+      - name: Build installer
+        shell: bash -el {0}
+        run: constructor installer/ --output-dir dist
+
+      - name: Identify artifact
+        shell: bash -el {0}
+        run: |
+          EXE=$(ls dist/*.exe | head -1)
+          echo "Built: $EXE"
+          echo "INSTALLER_PATH=$EXE" >> "$GITHUB_ENV"
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esfex-windows-installer
+          path: dist/*.exe
+
+      - name: Attach to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe

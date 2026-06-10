@@ -1,0 +1,77 @@
+# Windows installer specification for `constructor`.
+#
+# `constructor` (https://github.com/conda/constructor) builds a native Windows
+# `.exe` installer that lays down a self-contained conda environment. conda-forge
+# supplies every heavy/native dependency as a prebuilt binary — Qt (PySide6), the
+# Julia bridge (pyjuliacall), Julia itself, and the GDAL/GEOS/PROJ + HDF5 + BLAS
+# stack — so the user never compiles anything and never needs Julia or Python
+# pre-installed. ESFEX and its PyPI-only companions are pip-installed by the
+# post-install script (see post_install.bat).
+#
+# Build (on a Windows runner, or any OS for a dry check):
+#   conda install -n base -c conda-forge constructor menuinst
+#   constructor installer/ --output-dir dist
+#
+# The CI workflow .github/workflows/installer-windows.yml builds this on every
+# tag and uploads ESFEX-<version>-Windows-x86_64.exe to the GitHub Release.
+#
+# NOTE: `version` is kept in sync with pyproject.toml by CI (a sed step) so there
+# is a single source of truth; edit the package version there, not here.
+
+name: ESFEX
+version: "0.1.7"
+
+# Native/heavy dependencies from conda-forge (mirrors environment.yml). ESFEX
+# itself is NOT here (it is PyPI-only) — post_install.bat pip-installs it on top.
+channels:
+  - conda-forge
+
+specs:
+  - python >=3.10,<3.13
+  - pip
+  # Core scientific stack
+  - numpy >=1.24.0
+  - pandas >=2.0.0
+  - scipy >=1.10.0
+  - h5py >=3.8.0
+  - networkx >=3.0
+  - pyyaml >=6.0
+  - pydantic >=2.0.0
+  - openpyxl >=3.1.0
+  - typer >=0.9.0
+  - rich >=13.0.0
+  - psutil >=5.9.0
+  - markdown >=3.4
+  # GUI (Qt) and the Python <-> Julia bridge
+  - pyside6 >=6.5.0
+  - superqt >=0.6.0
+  - pyjuliacall >=0.9.14
+  - julia >=1.9            # bundle Julia so the first run needs no download
+  # Geospatial / resource-assessment native stack (GDAL/GEOS/PROJ)
+  - geopandas >=0.14.0
+  - rasterio >=1.3.0
+  - shapely >=2.0.0
+  - xgboost >=2.0.0
+  # Shortcut creation at install time
+  - menuinst >=2.0
+
+installer_type: exe
+
+# Lay the environment under a per-user location by default (no admin required),
+# which sidesteps the Scripts\-not-on-PATH problem entirely — the Start Menu
+# shortcut created by post_install.bat launches `python -m esfex studio` from
+# the bundled environment regardless of the user's PATH.
+default_prefix: "%LOCALAPPDATA%\\ESFEX"
+default_prefix_domain_user: "%LOCALAPPDATA%\\ESFEX"
+
+# Do not touch the user's global PATH / registry Python.
+initialize_by_default: false
+register_python_default: false
+
+# pip-install ESFEX (+ companions), bake the Julia depot, and create the
+# "ESFEX Studio" Start Menu shortcut.
+post_install: post_install.bat
+
+# Branding.
+icon_image: ../src/esfex/icons/esfex.ico
+license_file: ../LICENSE

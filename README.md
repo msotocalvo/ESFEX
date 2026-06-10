@@ -160,6 +160,14 @@ ESFEX treats sector coupling as a first-class architectural principle. Any energ
 
 ESFEX is a hybrid Python/Julia package. Python ≥ 3.10 and a working Julia ≥ 1.9 installation are required; the Julia dependencies are managed automatically through `juliacall` on first run.
 
+### Windows installer (no Python/Julia required)
+
+For Windows users who don't want to manage a Python/Julia toolchain, a native
+`.exe` installer bundles everything (Python, Qt, Julia, the GDAL stack) and adds
+an **"ESFEX Studio"** Start Menu shortcut — no `pip`, no `PATH` setup. Download
+it from the [latest release](https://github.com/Net-Zero-Horizon/ESFEX/releases/latest)
+(`ESFEX-<version>-Windows-x86_64.exe`). Build details: [`installer/`](installer/).
+
 ### From PyPI
 
 ```bash
