@@ -439,29 +439,58 @@ def _apply_grid_layout(
     Edges get simple orthogonal routing with two bend points; the JS side
     then spreads incoming connections along each bar in Phase 2.
     """
-    # ── 1. Group buses by (parent_node, voltage_kv) ──
-    buses_by_node_volt: dict[tuple[int, float], list[dict]] = {}
-    voltages: set[float] = set()
+    import math
+
+    # ── 1. Transformer-tree depth → row. A bus that is the LV side of a
+    #      transformer sits one row BELOW its HV parent; roots (buses that are
+    #      no transformer's LV side) sit at the top. So every transformer
+    #      connects adjacent rows — a clean short vertical between its two bars
+    #      — instead of spanning the global voltage stack and routing around
+    #      intermediate bars. Line-connected buses share their neighbour's row.
+    volt = {c["id"]: float(c["properties"].get("voltageKv", 0.0) or 0.0)
+            for c in elk_children}
+    parent_of: dict[str, str] = {}
+    for edge in elk_edges:
+        if edge["properties"].get("edgeType") != "transformer":
+            continue
+        a, b = edge["sources"][0], edge["targets"][0]
+        hi, lo = (a, b) if volt.get(a, 0.0) >= volt.get(b, 0.0) else (b, a)
+        if lo not in parent_of or volt.get(hi, 0.0) > volt.get(parent_of[lo], 0.0):
+            parent_of[lo] = hi
+    depth: dict[str, int] = {}
+
+    def _depth_of(g: str, seen: frozenset) -> int:
+        if g in depth:
+            return depth[g]
+        if g not in parent_of or g in seen:
+            depth[g] = 0
+            return 0
+        depth[g] = _depth_of(parent_of[g], seen | {g}) + 1
+        return depth[g]
+
+    for c in elk_children:
+        _depth_of(c["id"], frozenset())
+    row_of: dict[str, int] = {c["id"]: depth[c["id"]] for c in elk_children}
+
+    # ── Group buses by (parent_node, row) ──
+    buses_by_node_volt: dict[tuple[int, int], list[dict]] = {}
+    rows_seen: set[int] = set()
     nodes_seen: set[int] = set()
     for child in elk_children:
-        props = child["properties"]
-        v = float(props.get("voltageKv", 0.0) or 0.0)
-        n = int(props.get("parentNode", 0) or 0)
-        buses_by_node_volt.setdefault((n, v), []).append(child)
-        voltages.add(v)
+        n = int(child["properties"].get("parentNode", 0) or 0)
+        r = row_of[child["id"]]
+        buses_by_node_volt.setdefault((n, r), []).append(child)
+        rows_seen.add(r)
         nodes_seen.add(n)
 
-    # Voltage rows — descending so HV is on top
-    sorted_voltages = sorted(voltages, reverse=True)
-    v_to_row = {v: i for i, v in enumerate(sorted_voltages)}
+    sorted_voltages = sorted(rows_seen)          # row indices, ascending (top→down)
+    v_to_row = {r: r for r in rows_seen}         # row key == row index now
 
     # Node columns — preserve state.nodes order; append any orphaned IDs
     state_node_order = [n.index for n in state.nodes if n.index in nodes_seen]
     for n in nodes_seen:
         if n not in state_node_order:
             state_node_order.append(n)
-
-    import math
 
     # ── 2. For each (node, voltage) cell with multiple buses, lay them
     #      out in an internal sub-grid (≈ sqrt(N) wide) so they don't
@@ -576,17 +605,17 @@ def _apply_grid_layout(
         tgt = bus_index.get(edge["targets"][0])
         if not src or not tgt:
             continue
-        sv = float(src["properties"].get("voltageKv", 0.0) or 0.0)
-        tv = float(tgt["properties"].get("voltageKv", 0.0) or 0.0)
+        sr = row_of.get(edge["sources"][0], 0)
+        tr_ = row_of.get(edge["targets"][0], 0)
         sx = src["x"] + src["width"] / 2
         tx = tgt["x"] + tgt["width"] / 2
         x_left = min(sx, tx)
         x_right = max(sx, tx)
-        if sv == tv:
+        if sr == tr_:
             same_row_edges.append(edge)
             continue
-        r_lo = min(v_to_row[sv], v_to_row[tv])
-        r_hi = max(v_to_row[sv], v_to_row[tv])
+        r_lo = min(sr, tr_)
+        r_hi = max(sr, tr_)
         gap_edges.setdefault((r_lo, r_hi), []).append((x_left, x_right, edge))
 
     # Greedy interval coloring per gap
@@ -618,8 +647,7 @@ def _apply_grid_layout(
         tgt = bus_index[edge["targets"][0]]
         sx = src["x"] + src["width"] / 2
         tx = tgt["x"] + tgt["width"] / 2
-        sv = float(src["properties"].get("voltageKv", 0.0) or 0.0)
-        same_row_by_row.setdefault(v_to_row[sv], []).append(
+        same_row_by_row.setdefault(row_of.get(edge["sources"][0], 0), []).append(
             (min(sx, tx), max(sx, tx), edge))
     same_row_lane_idx: dict[str, int] = {}
     same_row_lane_count: dict[int, int] = {}
@@ -747,9 +775,8 @@ def _apply_grid_layout(
             # below as a clean U (no segment crossing a bar).
             ty = tgt["y"] + _BUS_H
 
-        sv = float(src["properties"].get("voltageKv", 0.0) or 0.0)
-        tv = float(tgt["properties"].get("voltageKv", 0.0) or 0.0)
-        rows_apart = abs(v_to_row.get(sv, 0) - v_to_row.get(tv, 0))
+        rows_apart = abs(row_of.get(edge["sources"][0], 0)
+                         - row_of.get(edge["targets"][0], 0))
 
         edge["properties"]["precomputedRoute"] = True
 

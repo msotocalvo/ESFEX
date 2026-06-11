@@ -492,11 +492,14 @@ def test_layout_assigns_xy_to_every_child():
         assert isinstance(child["y"], float)
 
 
-def test_layout_hv_row_above_lv_row():
-    # higher voltage -> smaller row index -> smaller y (top)
+def test_layout_transformer_parent_above_child():
+    # Rows follow the transformer tree: the HV (parent) bar sits above the LV
+    # (child) bar it feeds, so the transformer is a short vertical.
     state = GuiSystemState()
     state.nodes = [GuiNode(index=0, name="N")]
     state.buses = {"hv": _bus("hv", 0, 400.0), "lv": _bus("lv", 0, 110.0)}
+    state.transformers = [GuiTransformer(
+        name="T", from_bus="hv", to_bus="lv", rated_power_mva=100.0)]
     out = gb.build_elk_graph(state)
     by_id = {c["id"]: c for c in out["elkGraph"]["children"]}
     assert by_id["bus_hv"]["y"] < by_id["bus_lv"]["y"]
@@ -667,9 +670,9 @@ def test_adaptive_spacing_grows_dense_gap():
     assert dense >= sparse
 
 
-def test_multi_row_edge_routes_through_column_gap():
-    """An edge spanning >1 voltage row must NOT drop straight through the
-    bars in between — its long vertical run is offset into a column gap."""
+def test_multi_row_line_routes_through_column_gap():
+    """A LINE spanning >1 row (rows set by the transformer tree) must NOT drop
+    straight through the bar in between — its vertical run offsets into a gap."""
     state = GuiSystemState()
     state.nodes = [GuiNode(index=0, name="N0")]
     state.buses = {
@@ -677,16 +680,21 @@ def test_multi_row_edge_routes_through_column_gap():
         "m": _bus("m", 0, 220.0, "M"),
         "l": _bus("l", 0, 110.0, "L"),
     }
-    # Cross-voltage line 400 -> 110 skips the 220 row in between.
+    # Transformer cascade sets depths: h=row0, m=row1, l=row2.
+    state.transformers = [
+        GuiTransformer(name="T1", from_bus="h", to_bus="m", rated_power_mva=100.0),
+        GuiTransformer(name="T2", from_bus="m", to_bus="l", rated_power_mva=100.0),
+    ]
+    # A line h(row0) -> l(row2) spans 2 rows → channel route around m.
     state.transmission_lines = [GuiTransmissionLine(
         line_id="X", from_bus="h", to_bus="l",
         capacity_mw=100.0, voltage_kv=400.0)]
     out = gb.build_elk_graph(state)
-    ch = {c["id"]: c for c in out["elkGraph"]["children"]}
-    mid = [c for c in ch.values()
-           if c["properties"]["voltageKv"] == 220.0][0]
+    mid = {c["id"]: c for c in out["elkGraph"]["children"]}["bus_m"]
     mid_x0, mid_x1 = mid["x"], mid["x"] + mid["width"]
-    bends = out["elkGraph"]["edges"][0]["sections"][0]["bendPoints"]
+    line_edge = [e for e in out["elkGraph"]["edges"]
+                 if e["properties"]["edgeType"] == "transmission"][0]
+    bends = line_edge["sections"][0]["bendPoints"]
     assert len(bends) == 4                       # channel route
     chx = bends[1]["x"]
     assert chx == bends[2]["x"]                  # vertical channel segment
