@@ -308,18 +308,26 @@ def test_transmission_self_loop_and_invalid_bus_skipped():
     assert out["elkGraph"]["edges"] == []
 
 
-def test_transmission_with_wiring_endpoint_is_kept():
-    # A line ALWAYS connects bus-to-bus; the visual endpoint hint (here a
-    # transformer) must NOT drop it (doing so left bars electrically isolated).
-    state = _state_two_nodes()
-    line = GuiTransmissionLine(
-        line_id="L0", from_bus="b0", to_bus="b1", capacity_mw=10.0)
-    line.from_endpoint = EndpointRef(element_type="transformer",
-                                     element_id="t0")
-    state.transmission_lines = [line]
+def test_transformer_bridges_buses_from_its_stub_lines():
+    # Geographic rule: bus --line--> transformer --line--> bus. The two lines
+    # terminating at the transformer are its stubs (consumed, not drawn as
+    # transmission); the transformer bridges the buses on their far ends —
+    # even when its own from_bus/to_bus fields are stale.
+    state = GuiSystemState()
+    state.nodes = [GuiNode(index=0, name="N")]
+    state.buses = {"hv": _bus("hv", 0, 220.0), "lv": _bus("lv", 0, 110.0)}
+    state.transformers = [GuiTransformer(
+        name="T", from_bus="stale_a", to_bus="stale_b", rated_power_mva=100.0)]
+    s1 = GuiTransmissionLine(line_id="s1", from_bus="hv", to_bus="hv")
+    s1.to_endpoint = EndpointRef(element_type="transformer", element_id="0")
+    s2 = GuiTransmissionLine(line_id="s2", from_bus="lv", to_bus="lv")
+    s2.to_endpoint = EndpointRef(element_type="transformer", element_id="0")
+    state.transmission_lines = [s1, s2]
     out = gb.build_elk_graph(state)
-    assert len(out["elkGraph"]["edges"]) == 1
-    assert out["elkGraph"]["edges"][0]["properties"]["edgeType"] == "transmission"
+    edges = out["elkGraph"]["edges"]
+    assert len(edges) == 1                      # the stubs are consumed
+    assert edges[0]["properties"]["edgeType"] == "transformer"
+    assert {edges[0]["sources"][0], edges[0]["targets"][0]} == {"bus_hv", "bus_lv"}
 
 
 def test_line_between_same_node_voltage_buses_appears():

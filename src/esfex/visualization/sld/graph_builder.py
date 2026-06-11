@@ -221,12 +221,27 @@ def build_elk_graph(
         edge_count[src_gid] += 1
         edge_count[tgt_gid] += 1
 
+    # ── Geographic connectivity: bus --line--> transformer --line--> bus ──
+    # A transformer's two windings are wired to buses by the lines that
+    # TERMINATE at it (from_endpoint/to_endpoint == that transformer). Those
+    # lines are the transformer's stubs — consumed here, not drawn as separate
+    # transmission — and the transformer bridges the buses on their far ends.
+    # (A transformer's own from_bus/to_bus fields can disagree with the drawn
+    # topology, so the lines — the geographic network — are the source of truth.)
+    tr_terminals: dict[str, list[str]] = {}
+    consumed_lines: set[str] = set()
     for line in state.transmission_lines:
-        # A line ALWAYS connects bus-to-bus (the geographic-network rule:
-        # every element joins the grid through a bus). from_bus/to_bus are the
-        # electrical endpoints; from_endpoint/to_endpoint are only visual hints
-        # (which symbol the wire was drawn to) and must NOT gate the edge —
-        # gating on them dropped real bus-to-bus lines and left bars isolated.
+        for ep, far_bus in ((line.from_endpoint, line.to_bus),
+                            (line.to_endpoint, line.from_bus)):
+            if (ep and ep.element_type == "transformer"
+                    and far_bus in valid_bus_ids):
+                tr_terminals.setdefault(str(ep.element_id), []).append(far_bus)
+                consumed_lines.add(line.line_id)
+
+    # Transmission lines: every line that is NOT a transformer stub, bus→bus.
+    for line in state.transmission_lines:
+        if line.line_id in consumed_lines:
+            continue
         if (line.from_bus not in valid_bus_ids
                 or line.to_bus not in valid_bus_ids
                 or line.from_bus == line.to_bus):
@@ -240,23 +255,24 @@ def build_elk_graph(
             line.voltage_kv or 220.0, line.capacity_mw or 0,
             line.line_id,
         )
+
+    # Transformers: bridge the two buses wired to it via its stub lines; fall
+    # back to from_bus/to_bus when the geographic stubs aren't both available.
     for i, tr in enumerate(state.transformers):
-        if (tr.from_bus not in valid_bus_ids
-                or tr.to_bus not in valid_bus_ids
-                or tr.from_bus == tr.to_bus):
+        seen: list[str] = []
+        for b in tr_terminals.get(str(i), []):
+            if b not in seen:
+                seen.append(b)
+        fb, tb = (seen[0], seen[1]) if len(seen) >= 2 else (tr.from_bus, tr.to_bus)
+        if (fb not in valid_bus_ids or tb not in valid_bus_ids or fb == tb):
             continue
-        sg = bus_to_group.get(tr.from_bus)
-        tg = bus_to_group.get(tr.to_bus)
+        sg = bus_to_group.get(fb)
+        tg = bus_to_group.get(tb)
         if not sg or not tg:
             continue
-        # Same-substation guard
         if group_meta[sg]["parent_node"] != group_meta[tg]["parent_node"]:
             continue
-        _add_edge(
-            sg, tg, "transformer",
-            0.0, tr.rated_power_mva or 0,
-            i,
-        )
+        _add_edge(sg, tg, "transformer", 0.0, tr.rated_power_mva or 0, i)
     for i, conv in enumerate(state.acdc_converters):
         if (conv.from_bus not in valid_bus_ids
                 or conv.to_bus not in valid_bus_ids
