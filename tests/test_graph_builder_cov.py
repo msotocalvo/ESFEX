@@ -622,3 +622,93 @@ def test_logging_does_not_raise_with_edges(caplog):
     with caplog.at_level(logging.INFO):
         out = gb.build_elk_graph(state, merge_level=1)
     assert len(out["elkGraph"]["edges"]) == 1
+
+
+# ── Adaptive lane separation (step 5b: same-row + cross-row lanes) ──
+
+
+def _nodes_at(kv, n):
+    state = GuiSystemState()
+    state.nodes = [GuiNode(index=i, name=f"N{i}") for i in range(n)]
+    state.buses = {f"b{i}": _bus(f"b{i}", i, kv, f"Bus{i}") for i in range(n)}
+    return state
+
+
+def test_same_row_overlapping_edges_get_distinct_lanes():
+    """Parallel same-voltage circuits that overlap in X must NOT collapse
+    onto a single Y line (the old behaviour) — each gets its own lane."""
+    state = _nodes_at(220.0, 4)
+    # Two nested, overlapping spans at the same voltage: 0-3 and 1-2.
+    state.transmission_lines = [
+        GuiTransmissionLine(line_id="L03", from_bus="b0", to_bus="b3",
+                            capacity_mw=100.0, voltage_kv=220.0),
+        GuiTransmissionLine(line_id="L12", from_bus="b1", to_bus="b2",
+                            capacity_mw=100.0, voltage_kv=220.0),
+    ]
+    out = gb.build_elk_graph(state, merge_level=1)
+    edges = out["elkGraph"]["edges"]
+    assert len(edges) == 2
+    lane_ys = [e["sections"][0]["bendPoints"][0]["y"] for e in edges]
+    assert len(set(lane_ys)) == 2, lane_ys           # distinct lanes
+
+
+def test_same_row_disjoint_edges_share_a_lane():
+    """Non-overlapping spans at one voltage reuse the same lane (compact)."""
+    state = _nodes_at(220.0, 4)
+    # Disjoint spans: 0-1 and 2-3.
+    state.transmission_lines = [
+        GuiTransmissionLine(line_id="L01", from_bus="b0", to_bus="b1",
+                            capacity_mw=100.0, voltage_kv=220.0),
+        GuiTransmissionLine(line_id="L23", from_bus="b2", to_bus="b3",
+                            capacity_mw=100.0, voltage_kv=220.0),
+    ]
+    out = gb.build_elk_graph(state, merge_level=1)
+    lane_ys = [e["sections"][0]["bendPoints"][0]["y"]
+               for e in out["elkGraph"]["edges"]]
+    assert len(set(lane_ys)) == 1, lane_ys           # shared lane
+
+
+def test_same_row_edge_uses_clean_u_route():
+    """A same-row edge exits and enters the BOTTOM face (clean U dip), so
+    no segment crosses a bar: start/end Y are equal, bend Y is below."""
+    state = _nodes_at(220.0, 2)
+    state.transmission_lines = [GuiTransmissionLine(
+        line_id="L", from_bus="b0", to_bus="b1",
+        capacity_mw=100.0, voltage_kv=220.0)]
+    out = gb.build_elk_graph(state, merge_level=1)
+    sec = out["elkGraph"]["edges"][0]["sections"][0]
+    assert sec["startPoint"]["y"] == sec["endPoint"]["y"]
+    assert sec["bendPoints"][0]["y"] > sec["startPoint"]["y"]
+
+
+def test_adaptive_spacing_grows_dense_gap():
+    """A row gap crossed by many overlapping cross-voltage edges must be
+    taller than one crossed by a single edge (step 5b)."""
+    def _gap(n_overlapping):
+        state = GuiSystemState()
+        # n nodes, each with a 220 kV and a 110 kV bus.
+        state.nodes = [GuiNode(index=i, name=f"N{i}") for i in range(n_overlapping + 1)]
+        state.buses = {}
+        for i in range(n_overlapping + 1):
+            state.buses[f"h{i}"] = _bus(f"h{i}", i, 220.0, f"H{i}")
+            state.buses[f"l{i}"] = _bus(f"l{i}", i, 110.0, f"L{i}")
+        # Transmission lines from node 0's 110 kV bus fanning out to every
+        # other node's 220 kV bus → all share node 0's column on one side and
+        # span right → overlapping cross-row spans → many lanes.
+        state.transmission_lines = []
+        for i in range(1, n_overlapping + 1):
+            # cross-voltage line forces a cross-row (gap) edge
+            state.transmission_lines.append(GuiTransmissionLine(
+                line_id=f"X{i}", from_bus="l0", to_bus=f"h{i}",
+                capacity_mw=100.0, voltage_kv=220.0))
+        out = gb.build_elk_graph(state, merge_level=1)
+        ch = {c["id"]: c for c in out["elkGraph"]["children"]}
+        y220 = min(c["y"] for c in ch.values()
+                   if c["properties"]["voltageKv"] == 220.0)
+        y110 = min(c["y"] for c in ch.values()
+                   if c["properties"]["voltageKv"] == 110.0)
+        return abs(y110 - y220)
+
+    sparse = _gap(1)
+    dense = _gap(20)
+    assert dense >= sparse

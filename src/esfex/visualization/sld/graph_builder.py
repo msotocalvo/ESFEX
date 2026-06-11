@@ -651,22 +651,89 @@ def _apply_grid_layout(
             edge_lane_idx[e["id"]] = assigned
         gap_lane_count[(r_lo, r_hi)] = len(lane_ends)
 
-    # Resolve lane Y per gap
+    # Same-row (one-voltage) edges connect different node columns; colour
+    # them into lanes too so parallel circuits at the same voltage don't all
+    # stack on a single Y line (the previous behaviour).
+    same_row_by_row: dict[int, list[tuple[float, float, dict]]] = {}
+    for edge in same_row_edges:
+        src = bus_index[edge["sources"][0]]
+        tgt = bus_index[edge["targets"][0]]
+        sx = src["x"] + src["width"] / 2
+        tx = tgt["x"] + tgt["width"] / 2
+        sv = float(src["properties"].get("voltageKv", 0.0) or 0.0)
+        same_row_by_row.setdefault(v_to_row[sv], []).append(
+            (min(sx, tx), max(sx, tx), edge))
+    same_row_lane_idx: dict[str, int] = {}
+    same_row_lane_count: dict[int, int] = {}
+    for i, intervals in same_row_by_row.items():
+        intervals.sort(key=lambda t: t[0])
+        sr_ends: list[float] = []
+        for x_left, x_right, e in intervals:
+            assigned = -1
+            for k, end in enumerate(sr_ends):
+                if end + LANE_X_MARGIN < x_left:
+                    assigned = k
+                    break
+            if assigned == -1:
+                assigned = len(sr_ends)
+                sr_ends.append(x_right)
+            else:
+                sr_ends[assigned] = x_right
+            same_row_lane_idx[e["id"]] = assigned
+        same_row_lane_count[i] = len(sr_ends)
+
+    # ── 5b. Adaptive row spacing (the refinement promised in step 5a).
+    #       Grow each inter-row gap to fit BOTH the cross-row lanes passing
+    #       through it and the same-row lanes that dip below the upper row,
+    #       so edges stop cramming on one another (and on intermediate
+    #       bars). Sparse gaps keep the compact default. Row Y is then
+    #       recomputed and every bus re-placed at its new row. ──
+    n_rows = len(sorted_v_list)
+    cross_need = [0] * n_rows                 # cross-row lanes through gap below row i
+    for (r_lo, r_hi), n_lanes in gap_lane_count.items():
+        for i in range(r_lo, r_hi):           # edge spans every consecutive gap
+            cross_need[i] = max(cross_need[i], n_lanes)
+    gap_need = [cross_need[i] + same_row_lane_count.get(i, 0)
+                for i in range(n_rows)]
+
+    cursor_y = 0.0
+    for i, v in enumerate(sorted_v_list):
+        ridx = v_to_row[v]
+        row_y[ridx] = cursor_y
+        if i < n_rows - 1:
+            gap_h = max(_ROW_SPACING_Y,
+                        gap_need[ridx] * _LANE_STEP_Y + 2 * _LANE_MARGIN_Y)
+            cursor_y += row_h[ridx] + gap_h
+        else:
+            cursor_y += row_h[ridx]
+
+    for (node_idx, v), buses in buses_by_node_volt.items():
+        _cw, _ch, placements = cell_cache[(node_idx, v)]
+        y_top = row_y[v_to_row[v]]
+        for _dx, dy, b in placements:
+            b["y"] = y_top + dy
+
+    # Resolve lane Y per gap. Cross-row lanes are spread across the gap but
+    # start BELOW the upper row's same-row band so the two lane families
+    # don't overlap.
     edge_lane_y: dict[str, float] = {}
     for (r_lo, r_hi), n_lanes in gap_lane_count.items():
         gap_top = row_y[r_lo] + row_h[r_lo]
         gap_bottom = row_y[r_hi]
-        usable_top = gap_top + _LANE_MARGIN_Y
-        usable_h = max(_LANE_STEP_Y, gap_bottom - gap_top - 2 * _LANE_MARGIN_Y)
+        sr_band = same_row_lane_count.get(r_lo, 0) * _LANE_STEP_Y
+        usable_top = gap_top + _LANE_MARGIN_Y + sr_band
+        usable_h = max(_LANE_STEP_Y,
+                       gap_bottom - usable_top - _LANE_MARGIN_Y)
         for x_left, x_right, e in gap_edges[(r_lo, r_hi)]:
             idx = edge_lane_idx[e["id"]]
             t = (idx + 0.5) / n_lanes if n_lanes else 0.5
             edge_lane_y[e["id"]] = usable_top + t * usable_h
 
-    # Same-row edges: dip below the row
-    for edge in same_row_edges:
-        src = bus_index[edge["sources"][0]]
-        edge_lane_y[edge["id"]] = src["y"] + src["height"] + _LANE_MARGIN_Y
+    # Same-row edges: own lane band just below their row (one Y per lane).
+    for i, intervals in same_row_by_row.items():
+        base = row_y[i] + row_h[i] + _LANE_MARGIN_Y
+        for x_left, x_right, e in intervals:
+            edge_lane_y[e["id"]] = base + same_row_lane_idx[e["id"]] * _LANE_STEP_Y
 
     # ── 8. Emit edge sections with explicit Z-shape bend points using
     #      the assigned lane Y. JS will render these directly without
@@ -684,9 +751,13 @@ def _apply_grid_layout(
         # Default: exit src bottom, enter tgt top (DOWN-direction layout).
         sy = src["y"] + _BUS_H
         ty = tgt["y"]
-        # If src is below tgt, swap exit/entry direction.
         if src["y"] > tgt["y"]:
+            # src is below tgt → swap exit/entry direction.
             sy = src["y"]
+            ty = tgt["y"] + _BUS_H
+        elif src["y"] == tgt["y"]:
+            # Same row → both exit the bottom face and dip to the lane
+            # below as a clean U (no segment crossing a bar).
             ty = tgt["y"] + _BUS_H
         lane = edge_lane_y.get(edge["id"], (sy + ty) / 2)
         edge["properties"]["precomputedRoute"] = True
