@@ -57,9 +57,15 @@ def build_elk_graph(
     state: GuiSystemState,
     theme_colors: dict | None = None,
     filter_substation: int | None = None,
-    merge_level: int = 1,
 ) -> dict:
     """Build the SLD layout descriptor from the current system state.
+
+    The SLD is a single, electrically faithful schematic: **every** ``GuiBus``
+    renders as its own bar and **every** transformer / line / converter is its
+    own connection between its two real buses. There is no level aggregation —
+    buses are never pooled and parallel-looking elements are never collapsed
+    into an ``N×`` symbol, so the diagram always matches the actual topology
+    (each transformer visibly bridges its specific HV and LV bus).
 
     Parameters
     ----------
@@ -70,15 +76,6 @@ def build_elk_graph(
     filter_substation : int, optional
         If provided, only buses with ``parent_node == filter_substation``
         are included.
-    merge_level : int
-        Aggregation level:
-
-        * ``0`` — no merge: each ``GuiBus`` renders as its own bar.
-        * ``1`` — merge by ``(substation, voltage)``: all sub-buses at a
-          given voltage in a given substation collapse into one bar
-          (default — best general-purpose level).
-        * ``2`` — merge by substation: a single bar per substation with
-          all voltages combined; only inter-substation edges remain.
 
     Returns
     -------
@@ -87,7 +84,6 @@ def build_elk_graph(
            "constants": ...}``
     """
     colors = theme_colors or {}
-    merge_level = max(0, min(2, int(merge_level)))
 
     # ── Map bus_id → parent_node for topology validation ──
     if filter_substation is not None:
@@ -102,54 +98,26 @@ def build_elk_graph(
         if bus.bus_id in included_buses
     }
 
-    # ── Group buses according to merge_level ──
-    # Each visual "bus bar" is determined by the merge level:
-    #   level 0: one bar per GuiBus (full detail).
-    #   level 1: one bar per (substation, voltage) — feeders pooled.
-    #   level 2: one bar per substation — voltages pooled too.
+    # ── One bar per GuiBus (no merging) ──
     bus_to_group: dict[str, str] = {}
     group_to_buses: dict[str, list[str]] = {}
     group_meta: dict[str, dict] = {}
     _node_by_idx = {n.index: n for n in state.nodes}
 
-    # Pre-compute primary voltage per substation (highest voltage).
-    sub_primary_v: dict[int, float] = {}
     for bus in state.buses.values():
         if bus.bus_id not in included_buses:
             continue
-        cur = sub_primary_v.get(bus.parent_node, 0.0)
-        if bus.voltage_kv > cur:
-            sub_primary_v[bus.parent_node] = bus.voltage_kv
-
-    for bus in state.buses.values():
-        if bus.bus_id not in included_buses:
-            continue
-        node = _node_by_idx.get(bus.parent_node)
-        n_name = node.name if node and node.name else f"Node {bus.parent_node}"
-        if merge_level == 0:
-            gid = f"bus_{bus.bus_id}"
-            v_layout = bus.voltage_kv
-            label = bus.name or bus.bus_id
-        elif merge_level == 1:
-            gid = f"bar_{bus.parent_node}_{int(round(bus.voltage_kv * 10))}"
-            v_layout = bus.voltage_kv
-            label = f"{n_name} {bus.voltage_kv:g} kV"
-        else:  # merge_level == 2
-            gid = f"sub_{bus.parent_node}"
-            # Use primary voltage for layout positioning + color
-            v_layout = sub_primary_v.get(bus.parent_node, bus.voltage_kv)
-            label = n_name
+        gid = f"bus_{bus.bus_id}"
+        label = bus.name or bus.bus_id
         bus_to_group[bus.bus_id] = gid
         group_to_buses.setdefault(gid, []).append(bus.bus_id)
-        if gid not in group_meta:
-            group_meta[gid] = {
-                "parent_node": bus.parent_node,
-                "voltage_kv": v_layout,
-                "name": label,
-                "color": get_voltage_color(v_layout),
-                "n_buses": 0,
-            }
-        group_meta[gid]["n_buses"] += 1
+        group_meta[gid] = {
+            "parent_node": bus.parent_node,
+            "voltage_kv": bus.voltage_kv,
+            "name": label,
+            "color": get_voltage_color(bus.voltage_kv),
+            "n_buses": 1,
+        }
 
     # ── Collect equipment per merged bar (group_id) ──
     bus_equipment: dict[str, list[dict]] = {gid: [] for gid in group_meta}
@@ -232,42 +200,30 @@ def build_elk_graph(
             "color": colors.get("load", "#E67E22"),
         })
 
-    # ── Aggregate inter-group edges and count per group ──
-    # Multiple parallel circuits between the same two merged bars are
-    # collapsed into ONE edge with summed capacity (one per edge type),
-    # matching the PowerFactory convention where you see a single thick
-    # tie-line between two substations annotated with N×.
+    # ── One edge per physical element (no aggregation) ──
+    # Every transformer / line / converter is its own connection between its
+    # two real buses, so the schematic stays electrically faithful (parallel
+    # elements are NOT collapsed into an N× symbol).
     valid_bus_ids = included_buses
     _wiring_types = {
         "transformer", "generator", "battery", "electrolyzer",
         "acdc_converter", "freq_converter", "fuel_entry", "fuel_storage",
     }
 
-    # key: (group_id_a, group_id_b sorted, edge_type) → aggregate dict
-    agg_edges: dict[tuple[str, str, str], dict] = {}
+    edge_records: list[dict] = []
     edge_count: dict[str, int] = {gid: 0 for gid in group_meta}
 
-    def _aggregate(src_gid: str, tgt_gid: str, etype: str,
-                    voltage: float, capacity: float, name: str) -> None:
+    def _add_edge(src_gid: str, tgt_gid: str, etype: str,
+                   voltage: float, capacity: float, element_id: str) -> None:
         if src_gid == tgt_gid:
-            return  # intra-group: same logical bar
-        a, b = (src_gid, tgt_gid) if src_gid < tgt_gid else (tgt_gid, src_gid)
-        key = (a, b, etype)
-        agg = agg_edges.get(key)
-        if agg is None:
-            agg_edges[key] = {
-                "n": 1,
-                "total_mw": float(capacity or 0),
-                "voltage": float(voltage or 0),
-                "first_name": name,
-            }
-            edge_count[src_gid] += 1
-            edge_count[tgt_gid] += 1
-        else:
-            agg["n"] += 1
-            agg["total_mw"] += float(capacity or 0)
-            if voltage and not agg["voltage"]:
-                agg["voltage"] = float(voltage)
+            return  # both ends on the same bus → nothing to draw
+        edge_records.append({
+            "src": src_gid, "tgt": tgt_gid, "etype": etype,
+            "voltage": float(voltage or 0), "capacity": float(capacity or 0),
+            "element_id": str(element_id),
+        })
+        edge_count[src_gid] += 1
+        edge_count[tgt_gid] += 1
 
     for line in state.transmission_lines:
         if (line.from_bus not in valid_bus_ids
@@ -284,7 +240,7 @@ def build_elk_graph(
         tg = bus_to_group.get(line.to_bus)
         if not sg or not tg:
             continue
-        _aggregate(
+        _add_edge(
             sg, tg, "transmission",
             line.voltage_kv or 220.0, line.capacity_mw or 0,
             line.line_id,
@@ -301,10 +257,10 @@ def build_elk_graph(
         # Same-substation guard
         if group_meta[sg]["parent_node"] != group_meta[tg]["parent_node"]:
             continue
-        _aggregate(
+        _add_edge(
             sg, tg, "transformer",
             0.0, tr.rated_power_mva or 0,
-            tr.name or f"Transformer {i}",
+            i,
         )
     for i, conv in enumerate(state.acdc_converters):
         if (conv.from_bus not in valid_bus_ids
@@ -317,10 +273,10 @@ def build_elk_graph(
             continue
         if group_meta[sg]["parent_node"] != group_meta[tg]["parent_node"]:
             continue
-        _aggregate(
+        _add_edge(
             sg, tg, "converter",
             0.0, conv.rated_power_mva or 0,
-            f"ACDC {i}",
+            f"acdc_{i}",
         )
     for i, conv in enumerate(state.freq_converters):
         if (conv.from_bus not in valid_bus_ids
@@ -333,13 +289,13 @@ def build_elk_graph(
             continue
         if group_meta[sg]["parent_node"] != group_meta[tg]["parent_node"]:
             continue
-        _aggregate(
+        _add_edge(
             sg, tg, "converter",
             0.0, conv.rated_power_mva or 0,
-            f"Freq {i}",
+            f"freq_{i}",
         )
 
-    # ── Build flat ELK graph: ONE merged bar per (substation, voltage) ──
+    # ── Build flat ELK graph: one bar per bus ──
     # Horizontal bar: width = bar_len, height = bar + stub + equipment.
     elk_children: list[dict] = []
     for gid, meta in group_meta.items():
@@ -370,40 +326,31 @@ def build_elk_graph(
             },
         })
 
-    # ── Emit aggregated inter-group edges ──
-    # One ELK edge per (group_a, group_b, edge_type). Multiple parallel
-    # circuits collapse into one tie-line annotated with N× — matching
-    # the PowerFactory convention.
+    # ── Emit one ELK edge per physical element ──
     elk_edges: list[dict] = []
-    for (g_a, g_b, etype), agg in agg_edges.items():
+    for rec in edge_records:
+        etype = rec["etype"]
+        cap = rec["capacity"]
         if etype == "transmission":
-            color = get_voltage_color(agg["voltage"])
-            label = (
-                f"{agg['n']}× {agg['total_mw']:.0f} MW"
-                if agg["n"] > 1
-                else f"{agg['total_mw']:.0f} MW"
-            )
+            color = get_voltage_color(rec["voltage"])
+            label = f"{cap:.0f} MW"
         elif etype == "transformer":
             color = colors.get("transformer", "#9B59B6")
-            label = (
-                f"{agg['n']}× {agg['total_mw']:.0f} MVA"
-                if agg["n"] > 1
-                else f"{agg['total_mw']:.0f} MVA"
-            )
+            label = f"{cap:.0f} MVA"
         else:
             color = colors.get("acdc_converter", "#2980B9")
-            label = f"{agg['total_mw']:.0f} MVA"
+            label = f"{cap:.0f} MVA"
         elk_edges.append({
-            "id": f"agg_{g_a}_{g_b}_{etype}",
-            "sources": [g_a],
-            "targets": [g_b],
+            "id": f"{etype}_{rec['element_id']}_{rec['src']}_{rec['tgt']}",
+            "sources": [rec["src"]],
+            "targets": [rec["tgt"]],
             "properties": {
                 "elementType": etype,
-                "elementId": f"{g_a}_{g_b}_{etype}",
+                "elementId": rec["element_id"],
                 "edgeType": etype,
-                "voltageKv": agg["voltage"],
-                "capacityMw": agg["total_mw"],
-                "nCircuits": agg["n"],
+                "voltageKv": rec["voltage"],
+                "capacityMw": cap,
+                "nCircuits": 1,
                 "color": color,
                 "label": label,
             },

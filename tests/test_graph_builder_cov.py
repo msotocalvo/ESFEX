@@ -93,97 +93,42 @@ def test_constants_block_mirrors_module_constants():
     assert c["equipSpacing"] == gb._EQUIP_SPACING
 
 
-# ── merge_level clamping ──────────────────────────────────────────
+# ── One bar per bus (no merge) ────────────────────────────────────
 
 
-@pytest.mark.parametrize("raw,expected_prefix", [
-    (0, "bus_"),
-    (1, "bar_"),
-    (2, "sub_"),
-    (-5, "bus_"),   # clamped to 0
-    (99, "sub_"),   # clamped to 2
-])
-def test_merge_level_clamping_and_group_id_prefix(raw, expected_prefix):
+def test_one_bar_per_bus_label_falls_back_to_id():
     state = _state_two_nodes()
-    out = gb.build_elk_graph(state, merge_level=raw)
-    ids = [c["id"] for c in out["elkGraph"]["children"]]
-    assert ids, "expected at least one bus child"
-    assert all(i.startswith(expected_prefix) for i in ids), ids
-
-
-def test_merge_level_float_is_int_coerced():
-    # merge_level=1.9 -> int() -> 1 ("bar_" prefix)
-    state = _state_two_nodes()
-    out = gb.build_elk_graph(state, merge_level=1.9)
-    ids = [c["id"] for c in out["elkGraph"]["children"]]
-    assert all(i.startswith("bar_") for i in ids)
-
-
-# ── Group id formatting per merge level ───────────────────────────
-
-
-def test_level0_one_bar_per_bus_label_falls_back_to_id():
-    state = _state_two_nodes()
-    # blank name -> label uses bus_id
-    state.buses["b0"].name = ""
-    out = gb.build_elk_graph(state, merge_level=0)
+    state.buses["b0"].name = ""    # blank name -> label uses bus_id
+    out = gb.build_elk_graph(state)
     children = {c["id"]: c for c in out["elkGraph"]["children"]}
     assert "bus_b0" in children and "bus_b1" in children
     assert children["bus_b0"]["properties"]["label"] == "b0"
 
 
-def test_level1_bar_id_uses_voltage_tenths_and_node_label():
+def test_buses_at_same_node_voltage_stay_separate():
     state = _state_two_nodes()
-    state.buses["b0"].voltage_kv = 132.5
-    out = gb.build_elk_graph(state, merge_level=1)
-    ids = [c["id"] for c in out["elkGraph"]["children"]]
-    # 132.5 * 10 -> 1325
-    assert "bar_0_1325" in ids
+    state.buses["b0b"] = _bus("b0b", 0, 220.0)   # 2nd 220 kV bus at node 0
+    out = gb.build_elk_graph(state)
     children = {c["id"]: c for c in out["elkGraph"]["children"]}
-    assert children["bar_0_1325"]["properties"]["label"] == "Alpha 132.5 kV"
+    assert "bus_b0" in children and "bus_b0b" in children   # not merged
+    assert children["bus_b0"]["properties"]["nMergedBuses"] == 1
 
 
-def test_level1_merges_buses_same_node_voltage():
-    state = _state_two_nodes()
-    # add a second 220 kV bus to node 0 -> should merge into one bar
-    state.buses["b0b"] = _bus("b0b", 0, 220.0)
-    out = gb.build_elk_graph(state, merge_level=1)
-    children = {c["id"]: c for c in out["elkGraph"]["children"]}
-    assert children["bar_0_2200"]["properties"]["nMergedBuses"] == 2
-
-
-def test_level2_uses_node_name_and_primary_voltage():
-    state = _state_two_nodes()
-    # node 0 gets two voltages; primary (highest) is 400
-    state.buses["b0hv"] = _bus("b0hv", 0, 400.0)
-    out = gb.build_elk_graph(state, merge_level=2)
-    children = {c["id"]: c for c in out["elkGraph"]["children"]}
-    assert "sub_0" in children
-    p = children["sub_0"]["properties"]
-    assert p["label"] == "Alpha"
-    assert p["voltageKv"] == 400.0
-    assert p["color"] == get_voltage_color(400.0)
-    assert p["nMergedBuses"] == 2
-
-
-def test_node_without_name_uses_fallback_label():
+def test_bus_label_is_name_or_id():
     state = GuiSystemState()
     state.nodes = [GuiNode(index=0, name="")]
     state.buses = {"b0": _bus("b0", 0, 220.0)}
-    out = gb.build_elk_graph(state, merge_level=1)
-    lbl = out["elkGraph"]["children"][0]["properties"]["label"]
-    assert lbl == "Node 0 220 kV"
+    lbl = gb.build_elk_graph(state)["elkGraph"]["children"][0]["properties"]["label"]
+    assert lbl == "b0"
 
 
-def test_bus_with_missing_node_uses_node_idx_fallback():
-    # bus references node index that is not in state.nodes
+def test_bus_with_missing_node_still_renders():
     state = GuiSystemState()
     state.nodes = []
-    state.buses = {"b0": _bus("b0", 7, 220.0)}
-    out = gb.build_elk_graph(state, merge_level=1)
+    state.buses = {"named": _bus("named", 7, 220.0, "MyBus")}
+    out = gb.build_elk_graph(state)
     lbl = out["elkGraph"]["children"][0]["properties"]["label"]
-    assert lbl == "Node 7 220 kV"
-    # no nodeGroups because no node in state.nodes
+    assert lbl == "MyBus"
     assert out["nodeGroups"] == []
 
 
@@ -200,7 +145,7 @@ def test_generator_renewable_vs_nonrenewable_symbols_and_colors():
             instance_id="g_nr", unit_key="u2", name="Gas",
             gen_type="Non-renewable", fuel="Gas", bus="b1", rated_power=0.0),
     }
-    out = gb.build_elk_graph(state, merge_level=0)
+    out = gb.build_elk_graph(state)
     eq = out["busEquipment"]
     re_item = eq["bus_b0"][0]
     assert re_item["symbolType"] == "gen-renewable"
@@ -221,7 +166,7 @@ def test_generator_on_unknown_bus_is_skipped():
             instance_id="g", unit_key="u", name="X", gen_type="Renewable",
             fuel="Sun", bus="nonexistent", rated_power=10.0),
     }
-    out = gb.build_elk_graph(state, merge_level=0)
+    out = gb.build_elk_graph(state)
     assert all(items == [] for items in out["busEquipment"].values())
 
 
@@ -237,7 +182,7 @@ def test_battery_and_electrolyzer_attachment():
             instance_id="el", unit_key="ue", name="PEM", bus="b1",
             rated_power=50.0),
     }
-    out = gb.build_elk_graph(state, merge_level=0)
+    out = gb.build_elk_graph(state)
     bat = out["busEquipment"]["bus_b0"][0]
     assert bat["elementType"] == "battery"
     assert bat["symbolType"] == "battery"
@@ -262,7 +207,7 @@ def test_theme_color_overrides_apply():
             capacity=1.0),
     }
     theme = {"gen-renewable": "#111111", "battery": "#222222"}
-    out = gb.build_elk_graph(state, theme_colors=theme, merge_level=0)
+    out = gb.build_elk_graph(state, theme_colors=theme)
     assert out["busEquipment"]["bus_b0"][0]["color"] == "#111111"
     assert out["busEquipment"]["bus_b1"][0]["color"] == "#222222"
 
@@ -276,10 +221,10 @@ def test_demand_attaches_to_lowest_voltage_group():
         "hv": _bus("hv", 0, 400.0),
         "lv": _bus("lv", 0, 110.0),
     }
-    out = gb.build_elk_graph(state, merge_level=1)
-    # lowest voltage = 110 -> bar_0_1100
-    lv_eq = out["busEquipment"]["bar_0_1100"]
-    hv_eq = out["busEquipment"]["bar_0_4000"]
+    out = gb.build_elk_graph(state)
+    # lowest voltage = 110 -> its bus bar gets the load
+    lv_eq = out["busEquipment"]["bus_lv"]
+    hv_eq = out["busEquipment"]["bus_hv"]
     assert len(lv_eq) == 1
     assert lv_eq[0]["elementType"] == "load"
     assert lv_eq[0]["sublabel"] == "500 MW"
@@ -292,7 +237,7 @@ def test_demand_zero_peak_not_attached():
     state.nodes = [GuiNode(index=0, name="N",
                            demand=GuiNodeDemand(peak_mw=0.0))]
     state.buses = {"b": _bus("b", 0, 220.0)}
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     assert all(v == [] for v in out["busEquipment"].values())
 
 
@@ -302,7 +247,7 @@ def test_demand_node_with_no_groups_skipped():
     state.nodes = [GuiNode(index=0, name="N",
                            demand=GuiNodeDemand(peak_mw=100.0))]
     state.buses = {}
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     assert out["busEquipment"] == {}
 
 
@@ -314,7 +259,7 @@ def test_transmission_edge_basic():
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L0", from_bus="b0", to_bus="b1",
         capacity_mw=300.0, voltage_kv=220.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edges = out["elkGraph"]["edges"]
     assert len(edges) == 1
     e = edges[0]
@@ -325,7 +270,8 @@ def test_transmission_edge_basic():
     assert e["properties"]["color"] == get_voltage_color(220.0)
 
 
-def test_transmission_parallel_circuits_aggregate_with_n_prefix():
+def test_transmission_parallel_circuits_stay_separate():
+    # No aggregation: two parallel circuits render as two distinct edges.
     state = _state_two_nodes()
     state.transmission_lines = [
         GuiTransmissionLine(line_id="L0", from_bus="b0", to_bus="b1",
@@ -333,13 +279,11 @@ def test_transmission_parallel_circuits_aggregate_with_n_prefix():
         GuiTransmissionLine(line_id="L1", from_bus="b1", to_bus="b0",
                             capacity_mw=200.0, voltage_kv=220.0),
     ]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edges = out["elkGraph"]["edges"]
-    assert len(edges) == 1
-    p = edges[0]["properties"]
-    assert p["nCircuits"] == 2
-    assert p["capacityMw"] == 300.0
-    assert p["label"] == "2× 300 MW"
+    assert len(edges) == 2
+    assert {e["properties"]["label"] for e in edges} == {"100 MW", "200 MW"}
+    assert all(e["properties"]["nCircuits"] == 1 for e in edges)
 
 
 def test_transmission_default_voltage_when_none():
@@ -347,7 +291,7 @@ def test_transmission_default_voltage_when_none():
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L0", from_bus="b0", to_bus="b1",
         capacity_mw=100.0, voltage_kv=None)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     # voltage defaults to 220.0 in _aggregate call
     assert out["elkGraph"]["edges"][0]["properties"]["voltageKv"] == 220.0
 
@@ -360,7 +304,7 @@ def test_transmission_self_loop_and_invalid_bus_skipped():
         GuiTransmissionLine(line_id="bad", from_bus="b0", to_bus="ghost",
                             capacity_mw=10.0),
     ]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     assert out["elkGraph"]["edges"] == []
 
 
@@ -371,23 +315,20 @@ def test_transmission_with_wiring_endpoint_excluded():
     line.from_endpoint = EndpointRef(element_type="transformer",
                                      element_id="t0")
     state.transmission_lines = [line]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     assert out["elkGraph"]["edges"] == []
 
 
-def test_transmission_intra_group_skipped_when_merged():
-    # two buses same node+voltage merge to one group at level 1 ->
-    # a line between them is intra-group and produces no edge.
+def test_line_between_same_node_voltage_buses_appears():
+    # Two buses at the same node+voltage are SEPARATE bars now, so a line
+    # between them is a real edge (nothing is merged away).
     state = GuiSystemState()
     state.nodes = [GuiNode(index=0, name="N")]
     state.buses = {"a": _bus("a", 0, 220.0), "b": _bus("b", 0, 220.0)}
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L0", from_bus="a", to_bus="b", capacity_mw=10.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
-    assert out["elkGraph"]["edges"] == []
-    # but at level 0 (separate bars) the edge appears
-    out0 = gb.build_elk_graph(state, merge_level=0)
-    assert len(out0["elkGraph"]["edges"]) == 1
+    out = gb.build_elk_graph(state)
+    assert len(out["elkGraph"]["edges"]) == 1
 
 
 # ── Edge aggregation: transformer / converters ────────────────────
@@ -399,7 +340,7 @@ def test_transformer_edge_same_substation():
     state.buses = {"hv": _bus("hv", 0, 220.0), "lv": _bus("lv", 0, 110.0)}
     state.transformers = [GuiTransformer(
         name="T1", from_bus="hv", to_bus="lv", rated_power_mva=250.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edges = out["elkGraph"]["edges"]
     assert len(edges) == 1
     p = edges[0]["properties"]
@@ -414,11 +355,13 @@ def test_transformer_across_substations_excluded():
     state = _state_two_nodes()  # b0@node0, b1@node1
     state.transformers = [GuiTransformer(
         name="T", from_bus="b0", to_bus="b1", rated_power_mva=100.0)]
-    out = gb.build_elk_graph(state, merge_level=0)
+    out = gb.build_elk_graph(state)
     assert out["elkGraph"]["edges"] == []
 
 
-def test_transformer_unnamed_aggregates():
+def test_parallel_transformers_stay_separate():
+    # No aggregation: two transformers between the same two buses render as
+    # two distinct symbols (electrically faithful).
     state = GuiSystemState()
     state.nodes = [GuiNode(index=0, name="N")]
     state.buses = {"hv": _bus("hv", 0, 220.0), "lv": _bus("lv", 0, 110.0)}
@@ -428,10 +371,11 @@ def test_transformer_unnamed_aggregates():
         GuiTransformer(name="", from_bus="lv", to_bus="hv",
                        rated_power_mva=100.0),
     ]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edges = out["elkGraph"]["edges"]
-    assert len(edges) == 1
-    assert edges[0]["properties"]["label"] == "2× 200 MVA"
+    assert len(edges) == 2
+    assert all(e["properties"]["label"] == "100 MVA" for e in edges)
+    assert all(e["properties"]["edgeType"] == "transformer" for e in edges)
 
 
 def test_acdc_converter_edge():
@@ -440,7 +384,7 @@ def test_acdc_converter_edge():
     state.buses = {"ac": _bus("ac", 0, 220.0), "dc": _bus("dc", 0, 320.0)}
     state.acdc_converters = [GuiACDCConverter(
         name="C", from_bus="ac", to_bus="dc", rated_power_mva=400.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edges = out["elkGraph"]["edges"]
     assert len(edges) == 1
     p = edges[0]["properties"]
@@ -456,7 +400,7 @@ def test_freq_converter_edge_and_same_substation_guard():
     state.buses = {"a": _bus("a", 0, 220.0), "b": _bus("b", 0, 110.0)}
     state.freq_converters = [GuiFrequencyConverter(
         name="F", from_bus="a", to_bus="b", rated_power_mva=80.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edges = out["elkGraph"]["edges"]
     assert len(edges) == 1
     assert edges[0]["properties"]["edgeType"] == "converter"
@@ -465,7 +409,7 @@ def test_freq_converter_edge_and_same_substation_guard():
     state2 = _state_two_nodes()
     state2.freq_converters = [GuiFrequencyConverter(
         name="F", from_bus="b0", to_bus="b1", rated_power_mva=80.0)]
-    out2 = gb.build_elk_graph(state2, merge_level=0)
+    out2 = gb.build_elk_graph(state2)
     assert out2["elkGraph"]["edges"] == []
 
 
@@ -476,7 +420,7 @@ def test_converter_theme_color_override():
     state.acdc_converters = [GuiACDCConverter(
         name="C", from_bus="ac", to_bus="dc", rated_power_mva=10.0)]
     out = gb.build_elk_graph(
-        state, theme_colors={"acdc_converter": "#ABCDEF"}, merge_level=1)
+        state, theme_colors={"acdc_converter": "#ABCDEF"})
     assert out["elkGraph"]["edges"][0]["properties"]["color"] == "#ABCDEF"
 
 
@@ -487,7 +431,7 @@ def test_filter_substation_restricts_buses_and_edges():
     state = _state_two_nodes()
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L", from_bus="b0", to_bus="b1", capacity_mw=100.0)]
-    out = gb.build_elk_graph(state, filter_substation=0, merge_level=1)
+    out = gb.build_elk_graph(state, filter_substation=0)
     children = out["elkGraph"]["children"]
     # only node 0's bus survives
     assert len(children) == 1
@@ -509,7 +453,7 @@ def test_node_groups_collect_all_bars_per_node():
         "lv": _bus("lv", 0, 110.0),
         "o": _bus("o", 1, 220.0),
     }
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     groups = {g["nodeId"]: g for g in out["nodeGroups"]}
     assert set(groups) == {0, 1}
     assert groups[0]["name"] == "Sub"
@@ -521,7 +465,7 @@ def test_node_group_name_fallback_when_blank():
     state = GuiSystemState()
     state.nodes = [GuiNode(index=3, name="")]
     state.buses = {"b": _bus("b", 3, 220.0)}
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     assert out["nodeGroups"][0]["name"] == "Node 3"
 
 
@@ -530,7 +474,7 @@ def test_node_group_name_fallback_when_blank():
 
 def test_layout_assigns_xy_to_every_child():
     state = _state_two_nodes()
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     for child in out["elkGraph"]["children"]:
         assert "x" in child and "y" in child
         assert isinstance(child["x"], float)
@@ -542,14 +486,14 @@ def test_layout_hv_row_above_lv_row():
     state = GuiSystemState()
     state.nodes = [GuiNode(index=0, name="N")]
     state.buses = {"hv": _bus("hv", 0, 400.0), "lv": _bus("lv", 0, 110.0)}
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     by_id = {c["id"]: c for c in out["elkGraph"]["children"]}
-    assert by_id["bar_0_4000"]["y"] < by_id["bar_0_1100"]["y"]
+    assert by_id["bus_hv"]["y"] < by_id["bus_lv"]["y"]
 
 
 def test_layout_columns_left_to_right_by_node_order():
     state = _state_two_nodes()
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     by_node = {c["properties"]["parentNode"]: c
                for c in out["elkGraph"]["children"]}
     assert by_node[0]["x"] < by_node[1]["x"]
@@ -564,7 +508,7 @@ def test_transformer_routes_as_clean_vertical():
     state.buses = {"hv": _bus("hv", 0, 220.0), "lv": _bus("lv", 0, 110.0)}
     state.transformers = [GuiTransformer(
         name="T", from_bus="hv", to_bus="lv", rated_power_mva=100.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edge = out["elkGraph"]["edges"][0]
     assert edge["properties"]["precomputedRoute"] is True
     assert edge["properties"]["transformerVertical"] is True
@@ -580,7 +524,7 @@ def test_same_row_edge_dips_below_row():
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L", from_bus="b0", to_bus="b1", capacity_mw=100.0,
         voltage_kv=220.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edge = out["elkGraph"]["edges"][0]
     sec = edge["sections"][0]
     src = next(c for c in out["elkGraph"]["children"]
@@ -595,7 +539,7 @@ def test_multiple_buses_same_cell_subgrid_layout():
     state = GuiSystemState()
     state.nodes = [GuiNode(index=0, name="N")]
     state.buses = {f"b{i}": _bus(f"b{i}", 0, 220.0) for i in range(5)}
-    out = gb.build_elk_graph(state, merge_level=0)
+    out = gb.build_elk_graph(state)
     children = out["elkGraph"]["children"]
     assert len(children) == 5
     coords = {(round(c["x"], 3), round(c["y"], 3)) for c in children}
@@ -618,7 +562,7 @@ def test_logging_does_not_raise_with_edges(caplog):
         voltage_kv=220.0)]
     import logging
     with caplog.at_level(logging.INFO):
-        out = gb.build_elk_graph(state, merge_level=1)
+        out = gb.build_elk_graph(state)
     assert len(out["elkGraph"]["edges"]) == 1
 
 
@@ -643,7 +587,7 @@ def test_same_row_overlapping_edges_get_distinct_lanes():
         GuiTransmissionLine(line_id="L12", from_bus="b1", to_bus="b2",
                             capacity_mw=100.0, voltage_kv=220.0),
     ]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     edges = out["elkGraph"]["edges"]
     assert len(edges) == 2
     lane_ys = [e["sections"][0]["bendPoints"][0]["y"] for e in edges]
@@ -660,7 +604,7 @@ def test_same_row_disjoint_edges_share_a_lane():
         GuiTransmissionLine(line_id="L23", from_bus="b2", to_bus="b3",
                             capacity_mw=100.0, voltage_kv=220.0),
     ]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     lane_ys = [e["sections"][0]["bendPoints"][0]["y"]
                for e in out["elkGraph"]["edges"]]
     assert len(set(lane_ys)) == 1, lane_ys           # shared lane
@@ -673,7 +617,7 @@ def test_same_row_edge_uses_clean_u_route():
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L", from_bus="b0", to_bus="b1",
         capacity_mw=100.0, voltage_kv=220.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     sec = out["elkGraph"]["edges"][0]["sections"][0]
     assert sec["startPoint"]["y"] == sec["endPoint"]["y"]
     assert sec["bendPoints"][0]["y"] > sec["startPoint"]["y"]
@@ -699,7 +643,7 @@ def test_adaptive_spacing_grows_dense_gap():
             state.transmission_lines.append(GuiTransmissionLine(
                 line_id=f"X{i}", from_bus="l0", to_bus=f"h{i}",
                 capacity_mw=100.0, voltage_kv=220.0))
-        out = gb.build_elk_graph(state, merge_level=1)
+        out = gb.build_elk_graph(state)
         ch = {c["id"]: c for c in out["elkGraph"]["children"]}
         y220 = min(c["y"] for c in ch.values()
                    if c["properties"]["voltageKv"] == 220.0)
@@ -726,7 +670,7 @@ def test_multi_row_edge_routes_through_column_gap():
     state.transmission_lines = [GuiTransmissionLine(
         line_id="X", from_bus="h", to_bus="l",
         capacity_mw=100.0, voltage_kv=400.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     ch = {c["id"]: c for c in out["elkGraph"]["children"]}
     mid = [c for c in ch.values()
            if c["properties"]["voltageKv"] == 220.0][0]
@@ -746,6 +690,6 @@ def test_adjacent_row_edge_keeps_simple_z_route():
     state.transmission_lines = [GuiTransmissionLine(
         line_id="X", from_bus="h", to_bus="l",
         capacity_mw=100.0, voltage_kv=220.0)]
-    out = gb.build_elk_graph(state, merge_level=1)
+    out = gb.build_elk_graph(state)
     bends = out["elkGraph"]["edges"][0]["sections"][0]["bendPoints"]
     assert len(bends) == 2

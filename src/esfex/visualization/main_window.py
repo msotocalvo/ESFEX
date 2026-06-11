@@ -587,11 +587,6 @@ class MainWindow(QMainWindow):
 
     def _setup_center_views(self) -> QWidget:
         """Create tab bar + stacked widget for map/SLD view switching."""
-        # Initialize SLD-related attributes EARLY so _build_sld_ops_bar
-        # (called from this method) can read them without AttributeError.
-        if not hasattr(self, "_sld_merge_level"):
-            self._sld_merge_level = 1
-
         container = QWidget()
         vbox = QVBoxLayout(container)
         vbox.setContentsMargins(0, 0, 0, 0)
@@ -640,8 +635,6 @@ class MainWindow(QMainWindow):
         self._sld_page_ready = False   # True once JS page signals ready
         self._sld_dirty = True         # True when state changed since last SLD render
         self._sld_pending_json = None  # Queued graph JSON if page not ready yet
-        # SLD aggregation level: 0=full detail, 1=(substation, voltage), 2=substation
-        self._sld_merge_level = 1
         self._view_stack.addWidget(self.map_widget)
 
         # SLD + analysis panel in a horizontal splitter
@@ -702,9 +695,7 @@ class MainWindow(QMainWindow):
 
         state = self.model.state
         colors = self._get_sld_theme_colors()
-        elk_graph = build_elk_graph(
-            state, colors, merge_level=self._sld_merge_level,
-        )
+        elk_graph = build_elk_graph(state, colors)
         graph_json = json.dumps(elk_graph)
 
         if not self._sld_page_ready:
@@ -714,24 +705,6 @@ class MainWindow(QMainWindow):
 
         self.sld_widget.render_graph(graph_json)
         self._sld_dirty = False
-
-    @staticmethod
-    def _merge_level_label(level: int) -> str:
-        return {
-            0: "Full detail",
-            1: "Substation × kV",
-            2: "Substation only",
-        }.get(level, f"Level {level}")
-
-    def _on_sld_merge_changed(self, level: int):
-        """Slider moved — switch aggregation level and rerender."""
-        level = max(0, min(2, int(level)))
-        if level == self._sld_merge_level:
-            return
-        self._sld_merge_level = level
-        if hasattr(self, "_sld_merge_label"):
-            self._sld_merge_label.setText(self._merge_level_label(level))
-        self._rebuild_sld()
 
     def _get_sld_theme_colors(self) -> dict:
         """Collect theme colors for the SLD graph builder (electrical only)."""
@@ -792,32 +765,6 @@ class MainWindow(QMainWindow):
         self._sld_btn_load = QPushButton("Load Results")
         self._sld_btn_load.clicked.connect(self._on_sld_load_results)
         h.addWidget(self._sld_btn_load)
-
-        h.addWidget(QLabel("|"))
-
-        # Aggregation slider: 0 = full detail, 1 = (substation, voltage), 2 = substation
-        h.addWidget(QLabel("Detail:"))
-        self._sld_merge_slider = QSlider(Qt.Orientation.Horizontal)
-        self._sld_merge_slider.setMinimum(0)
-        self._sld_merge_slider.setMaximum(2)
-        self._sld_merge_slider.setValue(self._sld_merge_level)
-        self._sld_merge_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self._sld_merge_slider.setTickInterval(1)
-        self._sld_merge_slider.setSingleStep(1)
-        self._sld_merge_slider.setPageStep(1)
-        self._sld_merge_slider.setFixedWidth(90)
-        self._sld_merge_slider.setToolTip(
-            "Aggregation level:\n"
-            "  0 — Full (every bus shown)\n"
-            "  1 — Substation × Voltage (default)\n"
-            "  2 — Substation only"
-        )
-        self._sld_merge_slider.valueChanged.connect(self._on_sld_merge_changed)
-        h.addWidget(self._sld_merge_slider)
-
-        self._sld_merge_label = QLabel(self._merge_level_label(self._sld_merge_level))
-        self._sld_merge_label.setMinimumWidth(110)
-        h.addWidget(self._sld_merge_label)
 
         h.addWidget(QLabel("|"))
 
