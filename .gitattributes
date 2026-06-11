@@ -1,0 +1,5 @@
+# Windows batch scripts REQUIRE CRLF: with LF endings cmd.exe breaks the
+# multi-line caret (^) continuation, silently aborting the shortcut block
+# in installer/post_install.bat. Force CRLF on checkout everywhere.
+*.bat text eol=crlf
+*.cmd text eol=crlf

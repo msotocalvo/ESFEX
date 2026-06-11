@@ -22,6 +22,37 @@ if TYPE_CHECKING:
 __all__ = ["launch_studio"]
 
 
+def _ensure_qt_runtime_on_path() -> None:
+    """Put the conda Qt runtime dir on PATH for QtWebEngine's child process.
+
+    On a conda-forge layout the Qt DLLs live in ``<prefix>/Library/bin`` while
+    the WebEngine helper ``QtWebEngineProcess.exe`` lives in
+    ``<prefix>/Library/lib/qt6``. When the Studio is launched outside an
+    activated conda env (e.g. from the installer's Start-Menu/Desktop
+    shortcut), ``Library/bin`` is not on PATH, so the freshly-spawned helper
+    process cannot load ``Qt6WebEngineCore.dll`` and dies with
+    STATUS_DLL_NOT_FOUND (0xC0000135). The map then crash-loops with
+    "Map render process terminated ... Reloading". Child processes inherit
+    ``os.environ['PATH']``, so prepending the dir there fixes it. No-op off
+    Windows or outside a conda layout (e.g. a pip-only venv).
+    """
+    import os
+    import sys
+
+    if sys.platform != "win32":
+        return
+    libbin = os.path.join(sys.prefix, "Library", "bin")
+    if not os.path.isdir(libbin):
+        return
+    for d in (libbin, os.path.join(sys.prefix, "Library", "lib", "qt6")):
+        if os.path.isdir(d):
+            os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+            try:
+                os.add_dll_directory(d)
+            except (OSError, AttributeError):
+                pass
+
+
 def launch_studio(
     config: Optional[Union["ESFEXConfig", str, Path]] = None,
     system: Optional[str] = None,
@@ -46,6 +77,11 @@ def launch_studio(
         The configuration object if the user saved, ``None`` if they
         cancelled or closed without saving.
     """
+    # Must run before QtWebEngine spawns its render helper, or the map
+    # crash-loops with STATUS_DLL_NOT_FOUND when launched outside an
+    # activated conda env (e.g. the installer shortcut).
+    _ensure_qt_runtime_on_path()
+
     try:
         from PySide6.QtWidgets import QApplication
     except ImportError:

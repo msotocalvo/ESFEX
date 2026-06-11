@@ -1,6 +1,6 @@
 @echo off
 rem ===========================================================================
-rem  ESFEX Windows installer — post-install step (run by constructor).
+rem  ESFEX Windows installer - post-install step (run by constructor).
 rem
 rem  constructor exposes the freshly-created environment prefix as %PREFIX%.
 rem  conda-forge already supplied every heavy/native dependency (Qt, Julia, the
@@ -9,7 +9,7 @@ rem    1. pip-install ESFEX and its PyPI-only companions on top,
 rem    2. create "ESFEX Studio" Start Menu + Desktop shortcuts,
 rem    3. (best effort, LAST) warm up the Julia depot so the first launch is
 rem       fast. This step can take minutes (it downloads Julia on machines
-rem       without it), so it runs AFTER the shortcuts — a slow/hung warm-up
+rem       without it), so it runs AFTER the shortcuts - a slow/hung warm-up
 rem       must never prevent the shortcuts from being created.
 rem  Steps 2-3 are best-effort: a failure must NOT abort the installation.
 rem ===========================================================================
