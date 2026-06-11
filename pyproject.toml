@@ -98,6 +98,12 @@ dev = [
 [project.scripts]
 esfex = "esfex.cli:_entrypoint"
 
+# GUI launcher: pip builds a console-less ``esfex-studio.exe`` (pythonw-based)
+# on Windows. The installer's Start-Menu and Desktop shortcuts target it so a
+# double-click opens the Studio with no terminal window. See post_install.bat.
+[project.gui-scripts]
+esfex-studio = "esfex.cli:_studio_entrypoint"
+
 [project.urls]
 Homepage = "https://github.com/Net-Zero-Horizon/ESFEX"
 Documentation = "https://github.com/Net-Zero-Horizon/ESFEX#readme"

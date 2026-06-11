@@ -792,5 +792,21 @@ def _entrypoint() -> None:
     app()
 
 
+def _studio_entrypoint() -> None:
+    """GUI entrypoint for the Start-Menu / desktop launcher.
+
+    Registered as a ``gui-script`` in pyproject so pip builds a
+    console-less ``esfex-studio.exe`` (pythonw-based) on Windows:
+    double-clicking it opens the Studio with no terminal window.
+    Equivalent to ``esfex studio`` with no options — we call
+    ``launch_studio`` directly instead of routing through the typer
+    ``studio`` command, which would write to a console that doesn't
+    exist under pythonw.
+    """
+    from esfex.visualization import launch_studio
+
+    launch_studio(blocking=True)
+
+
 if __name__ == "__main__":
     _entrypoint()

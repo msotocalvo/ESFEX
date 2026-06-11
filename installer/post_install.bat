@@ -23,20 +23,31 @@ rem    stall compiling. Tolerate failure (no network / slow machine).
 echo Warming up the Julia backend (this may take a few minutes; optional)...
 "%PYEXE%" -m esfex precompile || echo [warn] Julia precompile skipped/failed; it will run on first launch instead.
 
-rem -- Start Menu shortcut: "ESFEX Studio" -> pythonw -m esfex studio.
-echo Creating the Start Menu shortcut...
+rem -- Shortcuts: "ESFEX Studio" -> the console-less esfex-studio.exe that pip
+rem    generated from the [project.gui-scripts] entry point. Double-clicking it
+rem    opens the Studio with no terminal window. We create one in the Start Menu
+rem    and one on the Desktop. The launcher's own icon is generic, so we point
+rem    IconLocation at the bundled esfex.ico.
+echo Creating the Start Menu and Desktop shortcuts...
 set "SMDIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\ESFEX"
+set "EXE=%PREFIX%\Scripts\esfex-studio.exe"
 set "ICON=%PREFIX%\Lib\site-packages\esfex\icons\esfex.ico"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$d='%SMDIR%'; if(!(Test-Path $d)){New-Item -ItemType Directory -Path $d -Force | Out-Null};" ^
+  "$exe='%EXE%'; $icon='%ICON%';" ^
+  "if(!(Test-Path $exe)){$exe='%PYWEXE%'};" ^
   "$w=New-Object -ComObject WScript.Shell;" ^
-  "$s=$w.CreateShortcut(Join-Path $d 'ESFEX Studio.lnk');" ^
-  "$s.TargetPath='%PYWEXE%';" ^
-  "$s.Arguments='-m esfex studio';" ^
-  "$s.WorkingDirectory=$env:USERPROFILE;" ^
-  "if(Test-Path '%ICON%'){$s.IconLocation='%ICON%'};" ^
-  "$s.Description='ESFEX — GIS-based power system designer';" ^
-  "$s.Save()" || echo [warn] Could not create the Start Menu shortcut.
+  "function New-EsfexShortcut($path){" ^
+  "  $s=$w.CreateShortcut($path);" ^
+  "  if($exe -eq '%PYWEXE%'){$s.TargetPath='%PYWEXE%'; $s.Arguments='-m esfex studio'} else {$s.TargetPath=$exe; $s.Arguments=''};" ^
+  "  $s.WorkingDirectory=$env:USERPROFILE;" ^
+  "  if(Test-Path $icon){$s.IconLocation=$icon};" ^
+  "  $s.Description='ESFEX — GIS-based power system designer';" ^
+  "  $s.Save()" ^
+  "};" ^
+  "$d='%SMDIR%'; if(!(Test-Path $d)){New-Item -ItemType Directory -Path $d -Force | Out-Null};" ^
+  "New-EsfexShortcut (Join-Path $d 'ESFEX Studio.lnk');" ^
+  "$desk=[Environment]::GetFolderPath('Desktop');" ^
+  "if($desk){New-EsfexShortcut (Join-Path $desk 'ESFEX Studio.lnk')}" || echo [warn] Could not create one or more shortcuts.
 
 echo ESFEX post-install finished.
 exit /b 0
