@@ -639,10 +639,9 @@ class MainWindow(QMainWindow):
         self.sld_widget = SldWidget()
         self._sld_page_ready = False   # True once JS page signals ready
         self._sld_dirty = True         # True when state changed since last SLD render
-        self._sld_pending_render = False  # True when a render was queued pre-ready
-        self._sld_current_substation = None  # PowSyBl substation id being shown
-        self._sld_substations = []     # available substation ids
-        self._sld_last_svg = ""        # last rendered SVG (for export)
+        self._sld_pending_json = None  # Queued graph JSON if page not ready yet
+        # SLD aggregation level: 0=full detail, 1=(substation, voltage), 2=substation
+        self._sld_merge_level = 1
         self._view_stack.addWidget(self.map_widget)
 
         # SLD + analysis panel in a horizontal splitter
@@ -698,92 +697,23 @@ class MainWindow(QMainWindow):
                 self._sld_btn_play.setText("\u25B6")
 
     def _rebuild_sld(self):
-        """Regenerate the single-line diagram for the current substation,
-        re-applying the operational snapshot if one is active."""
-        self._render_sld(self._current_sld_snapshot())
-
-    def _current_sld_snapshot(self):
-        """The operational timestep currently selected, or None (static SLD)."""
-        loader = getattr(self, "_sld_results_loader", None)
-        if loader is None:
-            return None
-        try:
-            year_data = self._sld_year_combo.currentData()
-            if year_data is None:
-                return None
-            return loader.get_timestep(int(year_data), self._sld_hour_slider.value())
-        except Exception:
-            return None
-
-    def _render_sld(self, snapshot=None):
-        """Build the PowSyBl SLD SVG for the selected substation and display it.
-        Operational values (if ``snapshot``) are baked into the SVG natively."""
-        from esfex.visualization.sld.powsybl_builder import (
-            generate_sld_svg, substation_ids)
+        """Regenerate the single-line diagram from the current GuiSystemState."""
+        from esfex.visualization.sld.graph_builder import build_elk_graph
 
         state = self.model.state
-        subs = substation_ids(state)
-        self._sld_substations = subs
-        self._populate_substation_combo(subs)
-        if not subs:
-            self._sld_last_svg = ""
-            if self._sld_page_ready:
-                self.sld_widget.render_powsybl_svg("")
-            self._sld_dirty = False
-            return
+        colors = self._get_sld_theme_colors()
+        elk_graph = build_elk_graph(
+            state, colors, merge_level=self._sld_merge_level,
+        )
+        graph_json = json.dumps(elk_graph)
 
-        cur = getattr(self, "_sld_current_substation", None)
-        if cur not in subs:
-            cur = subs[0]
-            self._sld_current_substation = cur
-
-        try:
-            svg, _meta = generate_sld_svg(
-                state, cur, snapshot=snapshot, use_name=True)
-        except Exception as exc:
-            logger.exception("PowSyBl SLD generation failed: %s", exc)
-            return
-
-        self._sld_last_svg = svg
         if not self._sld_page_ready:
-            self._sld_pending_render = True
+            # Page hasn't loaded yet — queue for when it's ready
+            self._sld_pending_json = graph_json
             return
-        self.sld_widget.render_powsybl_svg(svg)
+
+        self.sld_widget.render_graph(graph_json)
         self._sld_dirty = False
-
-    def _populate_substation_combo(self, subs):
-        """Sync the substation selector with the available substations."""
-        combo = getattr(self, "_sld_sub_combo", None)
-        if combo is None:
-            return
-        # Build label list (node name when available, else the id).
-        node_name = {nd.index: (nd.name or f"Node {nd.index}")
-                     for nd in self.model.state.nodes}
-        labels = []
-        for sid in subs:
-            try:
-                ni = int(sid[1:])           # ids are "S<node_index>"
-            except (ValueError, IndexError):
-                ni = None
-            labels.append((sid, node_name.get(ni, sid)))
-        current = [combo.itemData(i) for i in range(combo.count())]
-        if current == subs:
-            return                          # unchanged — avoid signal churn
-        combo.blockSignals(True)
-        combo.clear()
-        for sid, label in labels:
-            combo.addItem(label, sid)
-        cur = getattr(self, "_sld_current_substation", None)
-        idx = subs.index(cur) if cur in subs else 0
-        combo.setCurrentIndex(idx)
-        combo.blockSignals(False)
-
-    def _on_sld_substation_changed(self, _index: int):
-        sid = self._sld_sub_combo.currentData()
-        if not sid or sid == getattr(self, "_sld_current_substation", None):
-            return
-        self._sld_current_substation = sid
-        self._render_sld(self._current_sld_snapshot())
 
     @staticmethod
     def _merge_level_label(level: int) -> str:
@@ -819,12 +749,19 @@ class MainWindow(QMainWindow):
         }
 
     def _on_sld_ready(self):
-        """Called when the SLD page (HTML viewer) has loaded."""
+        """Called when the SLD finishes layout and rendering."""
         if not self._sld_page_ready:
+            # First signal = page loaded. Flush any queued render.
             self._sld_page_ready = True
-            if self._sld_pending_render or self._sld_last_svg:
-                self._sld_pending_render = False
-                self._render_sld(self._current_sld_snapshot())
+            if self._sld_pending_json is not None:
+                self.sld_widget.render_graph(self._sld_pending_json)
+                self._sld_pending_json = None
+                self._sld_dirty = False
+                return  # sldReady will fire again after this render
+
+        # Reapply operational overlay if results are loaded
+        if getattr(self, "_sld_results_loader", None) is not None:
+            self._update_sld_ops_overlay()
 
     def _on_sld_element_selected(self, element_type: str, element_id: str):
         """SLD click → select in tree + show properties (no loop back to SLD)."""
@@ -858,17 +795,29 @@ class MainWindow(QMainWindow):
 
         h.addWidget(QLabel("|"))
 
-        # Substation selector — PowSyBl renders one substation at a time, so
-        # this IS the level-of-detail control for large systems (you never
-        # draw the whole grid at once).
-        h.addWidget(QLabel("Substation:"))
-        self._sld_sub_combo = QComboBox()
-        self._sld_sub_combo.setMinimumWidth(170)
-        self._sld_sub_combo.setToolTip(
-            "Which substation's single-line diagram to display")
-        self._sld_sub_combo.currentIndexChanged.connect(
-            self._on_sld_substation_changed)
-        h.addWidget(self._sld_sub_combo)
+        # Aggregation slider: 0 = full detail, 1 = (substation, voltage), 2 = substation
+        h.addWidget(QLabel("Detail:"))
+        self._sld_merge_slider = QSlider(Qt.Orientation.Horizontal)
+        self._sld_merge_slider.setMinimum(0)
+        self._sld_merge_slider.setMaximum(2)
+        self._sld_merge_slider.setValue(self._sld_merge_level)
+        self._sld_merge_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self._sld_merge_slider.setTickInterval(1)
+        self._sld_merge_slider.setSingleStep(1)
+        self._sld_merge_slider.setPageStep(1)
+        self._sld_merge_slider.setFixedWidth(90)
+        self._sld_merge_slider.setToolTip(
+            "Aggregation level:\n"
+            "  0 — Full (every bus shown)\n"
+            "  1 — Substation × Voltage (default)\n"
+            "  2 — Substation only"
+        )
+        self._sld_merge_slider.valueChanged.connect(self._on_sld_merge_changed)
+        h.addWidget(self._sld_merge_slider)
+
+        self._sld_merge_label = QLabel(self._merge_level_label(self._sld_merge_level))
+        self._sld_merge_label.setMinimumWidth(110)
+        h.addWidget(self._sld_merge_label)
 
         h.addWidget(QLabel("|"))
 
@@ -1035,15 +984,17 @@ class MainWindow(QMainWindow):
         self._sld_update_timer.start()
 
     def _update_sld_ops_overlay(self):
-        """Re-render the SLD with the selected timestep's flows baked in."""
+        """Fetch snapshot from loader and push to SLD JS overlay."""
         loader = self._sld_results_loader
         if loader is None:
             return
         year_data = self._sld_year_combo.currentData()
         if year_data is None:
             return
-        snapshot = loader.get_timestep(int(year_data), self._sld_hour_slider.value())
-        self._render_sld(snapshot)
+        year = int(year_data)
+        hour = self._sld_hour_slider.value()
+        snapshot = loader.get_timestep(year, hour)
+        self.sld_widget.update_operational_data(json.dumps(snapshot))
 
     def _on_sld_play_toggle(self, checked: bool):
         if checked:
@@ -1381,7 +1332,7 @@ class MainWindow(QMainWindow):
                     "f_nom_hz": freq_analyzer.f_nom,
                 }
 
-        self._render_sld(snapshot)
+        self.sld_widget.update_operational_data(json.dumps(snapshot))
 
         # Populate contingency combo from scenario
         self._populate_contingency_combo_from_snapshot(snapshot)
