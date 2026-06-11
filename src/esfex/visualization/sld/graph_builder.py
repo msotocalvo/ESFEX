@@ -34,7 +34,10 @@ log = logging.getLogger(__name__)
 _BUS_H = 6               # Bus bar thickness
 _BUS_MIN_LEN = 200       # Minimum bus bar length (horizontal extent)
 _BUS_PER_EQUIP = 70      # Extra bar length per attached equipment slot
-_BUS_PER_EDGE = 28       # Extra bar length per inter-bus terminal slot
+_BUS_PER_EDGE = 28       # Extra bar length per line terminal slot
+_BUS_PER_XFMR = 100      # Extra bar length per transformer terminal (its
+                         # vertical symbol + capacity label need more room, so
+                         # parallel transformers don't overlap their labels)
 _BUS_LABEL_PAD = 24      # Bottom/top label margin
 _EQUIP_SIZE = 36         # Symbol diameter
 _EQUIP_SPACING = 70      # Spacing between equipment slots along the bar
@@ -208,6 +211,7 @@ def build_elk_graph(
 
     edge_records: list[dict] = []
     edge_count: dict[str, int] = {gid: 0 for gid in group_meta}
+    xfmr_count: dict[str, int] = {gid: 0 for gid in group_meta}  # transformer terminals
 
     def _add_edge(src_gid: str, tgt_gid: str, etype: str,
                    voltage: float, capacity: float, element_id: str) -> None:
@@ -220,6 +224,9 @@ def build_elk_graph(
         })
         edge_count[src_gid] += 1
         edge_count[tgt_gid] += 1
+        if etype == "transformer":
+            xfmr_count[src_gid] += 1
+            xfmr_count[tgt_gid] += 1
 
     # ── Geographic connectivity: bus --line--> transformer --line--> bus ──
     # A transformer's two windings are wired to buses by the lines that
@@ -312,10 +319,12 @@ def build_elk_graph(
     for gid, meta in group_meta.items():
         n_eq = len(bus_equipment.get(gid, []))
         n_edges = edge_count.get(gid, 0)
+        n_xf = xfmr_count.get(gid, 0)
         bar_len = max(
             _BUS_MIN_LEN,
             n_eq * _BUS_PER_EQUIP,
-            n_edges * _BUS_PER_EDGE,
+            # transformer terminals need more room than line terminals
+            n_xf * _BUS_PER_XFMR + (n_edges - n_xf) * _BUS_PER_EDGE,
         )
         equip_extent = _STUB_LEN + _EQUIP_SIZE + 24 if n_eq > 0 else 12
         bus_w = bar_len + 40   # margin for end labels
@@ -745,6 +754,8 @@ def _apply_grid_layout(
     #    other endpoint's centre X, so left-going connections attach on the
     #    left of the bar and right-going on the right (fewer crossings). ──
     _TERM_PAD = 24
+    edge_kind = {_e["id"]: _e["properties"].get("edgeType", "transmission")
+                 for _e in elk_edges}
     bus_center_x = {gid: c["x"] + c["width"] / 2 for gid, c in bus_index.items()}
     bus_edge_list: dict[str, list[tuple[str, str]]] = {gid: [] for gid in bus_index}
     for _e in elk_edges:
@@ -757,14 +768,21 @@ def _apply_grid_layout(
     for gid, lst in bus_edge_list.items():
         c = bus_index[gid]
         lst.sort(key=lambda e: bus_center_x.get(e[1], c["x"]))
-        n = len(lst)
+        # Each terminal occupies a weighted slot — transformers take more room
+        # than lines so their symbol + capacity label don't collide.
+        weights = [_BUS_PER_XFMR if edge_kind.get(eid) == "transformer"
+                   else _BUS_PER_EDGE for eid, _ in lst]
+        total = sum(weights)
         x0 = c["x"] + _TERM_PAD
         x1 = c["x"] + c["width"] - _TERM_PAD
         if x1 <= x0:
             x0, x1 = c["x"], c["x"] + c["width"]
-        for i, (eid, _other) in enumerate(lst):
-            frac = (i + 0.5) / n if n else 0.5
-            term_x[(gid, eid)] = x0 + frac * (x1 - x0)
+        span = x1 - x0
+        cum = 0.0
+        for (eid, _other), w in zip(lst, weights):
+            centre = cum + w / 2.0
+            term_x[(gid, eid)] = x0 + (centre / total) * span if total else (x0 + x1) / 2
+            cum += w
 
     for edge in elk_edges:
         src = bus_index.get(edge["sources"][0])
