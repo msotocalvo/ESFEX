@@ -35,7 +35,9 @@ jobs:
 
       - name: Install constructor
         shell: bash -el {0}
-        run: conda install -n base -y -c conda-forge constructor menuinst
+        # pillow is required by constructor to process the installer icon;
+        # nsis provides makensis on non-Windows runners (harmless on Windows).
+        run: conda install -n base -y -c conda-forge constructor menuinst pillow nsis
 
       - name: Sync installer version with pyproject.toml
         shell: bash -el {0}

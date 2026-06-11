@@ -42,11 +42,14 @@ specs:
   - rich >=13.0.0
   - psutil >=5.9.0
   - markdown >=3.4
-  # GUI (Qt) and the Python <-> Julia bridge
+  # GUI (Qt)
   - pyside6 >=6.5.0
   - superqt >=0.6.0
-  - pyjuliacall >=0.9.14
-  - julia >=1.9            # bundle Julia so the first run needs no download
+  # NOTE: Julia is NOT bundled here — conda-forge has no win-64 ``julia``
+  # package. The Python<->Julia bridge (``juliacall``) is pip-installed with
+  # ESFEX in post_install and downloads/instantiates Julia on first run via
+  # juliapkg. (A future fully-offline build would ship the Windows Julia
+  # tarball as extra_files and point juliacall at it.)
   # Geospatial / resource-assessment native stack (GDAL/GEOS/PROJ)
   - geopandas >=0.14.0
   - rasterio >=1.3.0
