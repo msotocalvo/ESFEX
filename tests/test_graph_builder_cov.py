@@ -532,19 +532,19 @@ def test_transformer_routes_as_clean_vertical():
     assert sec["startPoint"]["y"] != sec["endPoint"]["y"]
 
 
-def test_same_row_edge_dips_below_row():
-    # two nodes same voltage -> same row edge; lane = src below row
+def test_same_row_top_row_routes_above():
+    # Two buses at one voltage with no transformer above them are both in the
+    # TOP row, so their line routes ABOVE the bars (clear of the transformers
+    # that drop below).
     state = _state_two_nodes()
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L", from_bus="b0", to_bus="b1", capacity_mw=100.0,
         voltage_kv=220.0)]
     out = gb.build_elk_graph(state)
-    edge = out["elkGraph"]["edges"][0]
-    sec = edge["sections"][0]
+    sec = out["elkGraph"]["edges"][0]["sections"][0]
     src = next(c for c in out["elkGraph"]["children"]
                if c["properties"]["parentNode"] == 0)
-    expected_lane = src["y"] + src["height"] + gb._LANE_MARGIN_Y
-    assert sec["bendPoints"][0]["y"] == expected_lane
+    assert sec["bendPoints"][0]["y"] < src["y"]          # lane is above the bar
 
 
 def test_multiple_buses_same_cell_subgrid_layout():
@@ -625,8 +625,9 @@ def test_same_row_disjoint_edges_share_a_lane():
 
 
 def test_same_row_edge_uses_clean_u_route():
-    """A same-row edge exits and enters the BOTTOM face (clean U dip), so
-    no segment crosses a bar: start/end Y are equal, bend Y is below."""
+    """A same-row edge exits and enters the SAME face (clean U, no segment
+    crosses a bar): start/end Y are equal and the bend is on one side. For the
+    top row that side is above."""
     state = _nodes_at(220.0, 2)
     state.transmission_lines = [GuiTransmissionLine(
         line_id="L", from_bus="b0", to_bus="b1",
@@ -634,7 +635,7 @@ def test_same_row_edge_uses_clean_u_route():
     out = gb.build_elk_graph(state)
     sec = out["elkGraph"]["edges"][0]["sections"][0]
     assert sec["startPoint"]["y"] == sec["endPoint"]["y"]
-    assert sec["bendPoints"][0]["y"] > sec["startPoint"]["y"]
+    assert sec["bendPoints"][0]["y"] < sec["startPoint"]["y"]   # top row → above
 
 
 def test_adaptive_spacing_grows_dense_gap():

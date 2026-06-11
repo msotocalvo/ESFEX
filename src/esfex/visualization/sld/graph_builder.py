@@ -661,11 +661,14 @@ def _apply_grid_layout(
     #       bars). Sparse gaps keep the compact default. Row Y is then
     #       recomputed and every bus re-placed at its new row. ──
     n_rows = len(sorted_v_list)
+    top_r = sorted_v_list[0] if sorted_v_list else 0   # HV row routes lines ABOVE
     cross_need = [0] * n_rows                 # cross-row lanes through gap below row i
     for (r_lo, r_hi), n_lanes in gap_lane_count.items():
         for i in range(r_lo, r_hi):           # edge spans every consecutive gap
             cross_need[i] = max(cross_need[i], n_lanes)
-    gap_need = [cross_need[i] + same_row_lane_count.get(i, 0)
+    # The top row's same-row lines route ABOVE it (open space), so they don't
+    # reserve room in the gap below.
+    gap_need = [cross_need[i] + (0 if i == top_r else same_row_lane_count.get(i, 0))
                 for i in range(n_rows)]
 
     cursor_y = 0.0
@@ -689,7 +692,10 @@ def _apply_grid_layout(
     for (r_lo, r_hi), n_lanes in gap_lane_count.items():
         gap_top = row_y[r_lo] + row_h[r_lo]
         gap_bottom = row_y[r_hi]
-        sr_band = same_row_lane_count.get(r_lo, 0) * _LANE_STEP_Y
+        # The top row routes its same-row lines above, so its gap below has no
+        # same-row band to clear.
+        sr_band = (0 if r_lo == top_r
+                   else same_row_lane_count.get(r_lo, 0)) * _LANE_STEP_Y
         usable_top = gap_top + _LANE_MARGIN_Y + sr_band
         usable_h = max(_LANE_STEP_Y,
                        gap_bottom - usable_top - _LANE_MARGIN_Y)
@@ -698,11 +704,20 @@ def _apply_grid_layout(
             t = (idx + 0.5) / n_lanes if n_lanes else 0.5
             edge_lane_y[e["id"]] = usable_top + t * usable_h
 
-    # Same-row edges: own lane band just below their row (one Y per lane).
+    # Same-row edges: own lane band. The TOP row routes ABOVE its bars (clear
+    # space at the top, away from the transformers that drop below); every
+    # other row dips just below.
+    same_row_above: set[str] = set()
     for i, intervals in same_row_by_row.items():
-        base = row_y[i] + row_h[i] + _LANE_MARGIN_Y
-        for x_left, x_right, e in intervals:
-            edge_lane_y[e["id"]] = base + same_row_lane_idx[e["id"]] * _LANE_STEP_Y
+        if i == top_r:
+            base = row_y[i] - _LANE_MARGIN_Y
+            for x_left, x_right, e in intervals:
+                edge_lane_y[e["id"]] = base - same_row_lane_idx[e["id"]] * _LANE_STEP_Y
+                same_row_above.add(e["id"])
+        else:
+            base = row_y[i] + row_h[i] + _LANE_MARGIN_Y
+            for x_left, x_right, e in intervals:
+                edge_lane_y[e["id"]] = base + same_row_lane_idx[e["id"]] * _LANE_STEP_Y
 
     # ── 8. Emit edge sections with explicit Z-shape bend points using
     #      the assigned lane Y. JS will render these directly without
@@ -754,9 +769,14 @@ def _apply_grid_layout(
             sy = src["y"]
             ty = tgt["y"] + _BUS_H
         elif src["y"] == tgt["y"]:
-            # Same row → both exit the bottom face and dip to the lane
-            # below as a clean U (no segment crossing a bar).
-            ty = tgt["y"] + _BUS_H
+            if edge["id"] in same_row_above:
+                # Top row → both exit the TOP face and hop up to the lane above.
+                sy = src["y"]
+                ty = tgt["y"]
+            else:
+                # Same row → both exit the bottom face and dip to the lane
+                # below as a clean U (no segment crossing a bar).
+                ty = tgt["y"] + _BUS_H
 
         rows_apart = abs(row_of.get(edge["sources"][0], 0)
                          - row_of.get(edge["targets"][0], 0))
