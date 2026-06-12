@@ -19,7 +19,7 @@
 # is a single source of truth; edit the package version there, not here.
 
 name: ESFEX
-version: "0.1.8"
+version: "0.1.9"
 
 # Native/heavy dependencies from conda-forge (mirrors environment.yml). ESFEX
 # itself is NOT here (it is PyPI-only) — post_install.bat pip-installs it on top.
