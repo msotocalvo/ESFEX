@@ -35,6 +35,7 @@ var currentData = null;
 var currentLayouted = null;
 var selectedKey = null;
 var labelsVisible = true;
+var _pendingLabels = [];       // edge labels drawn in a final pass (avoid all)
 var zoomBehavior = null;
 var diagramBounds = null;     // { x, y, w, h } after layout
 var currentOpsData = null;    // latest operational snapshot (parsed JSON)
@@ -214,6 +215,7 @@ function render(data, layouted) {
     busLayout = {};
     selectedKey = null;
     _obstacleGrid = {};  // Reset spatial grid for label collision avoidance
+    _pendingLabels = []; // Edge labels are placed last, avoiding every element
     _darkenCache = {};   // Reset color cache
 
     var C = data.constants || {};
@@ -291,6 +293,11 @@ function render(data, layouted) {
     Object.keys(busLayout).forEach(function(bid) {
         _drawBus(gBuses, gStubs, gEquip, bid, busH, stubLen, eqSize, eqSpace);
     });
+
+    // ── Final pass: place edge labels now that EVERY element (bars, edges,
+    //    equipment) is a registered obstacle, so labels avoid them all while
+    //    still sitting on their own line. ──
+    _pendingLabels.forEach(_drawPendingLabel);
 
     // ── Compute diagram bounds & draw grid ──
     _updateDiagramBounds(gGrid);
@@ -1030,6 +1037,97 @@ function _edgeMidpoint(sections) {
 }
 
 /**
+ * Draw one deferred edge label. Transmission lines carry their label INLINE,
+ * breaking the line as ``----[Label]----`` along a horizontal stretch (an
+ * opaque box hides the line behind the text); transformers/converters keep
+ * their label just below the IEC symbol. Either way the label avoids every
+ * element except its own line (obstacles tagged with the edge's id).
+ */
+function _drawPendingLabel(e) {
+    var props = e.props;
+    if (!props.label) return;
+    var labelW = props.label.length * 6.5 + 16;
+    var labelH = 18;
+    var labelX, labelY, inline = false;
+    var hseg = (e.edgeType === 'transmission') ? _longestHSeg(e.sections) : null;
+    if (hseg && hseg.len > labelW * 0.4) {
+        var p = _placeLabelInline(hseg.x0, hseg.x1, hseg.y, labelW, labelH, e.owner);
+        labelX = p.x; labelY = p.y; inline = true;
+    } else {
+        labelX = e.mid.x;
+        labelY = e.mid.y;
+        // Transformer/converter labels sit BELOW their symbol, centred on the
+        // element's own X so they don't reach into a neighbour.
+        if (e.edgeType === 'transformer') labelY = e.mid.y + 34;
+        else if (e.edgeType === 'converter') labelY = e.mid.y + 32;
+        var placed = _placeLabel(labelX, labelY, labelW, labelH, e.owner);
+        labelX = placed.x;
+        labelY = placed.y;
+    }
+
+    e.g.append('rect')
+        .attr('x', labelX - labelW / 2).attr('y', labelY - 9)
+        .attr('width', labelW).attr('height', labelH).attr('rx', 4)
+        .attr('fill', T.edgeLabelBg).attr('stroke', e.color)
+        .attr('stroke-width', 0.8).attr('opacity', inline ? 1 : 0.95);
+    e.g.append('text')
+        .attr('x', labelX).attr('y', labelY + 1)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .attr('font-family', 'Segoe UI, Roboto, sans-serif')
+        .attr('font-size', '10px').attr('font-weight', '600')
+        .attr('fill', e.color).text(props.label);
+}
+
+/**
+ * Longest horizontal run of an edge, as { x0, x1, y, len }, or null if the
+ * edge has no horizontal segment. Used to sit a line's label cleanly ON the
+ * line (``----[Label]----``) along a straight horizontal stretch.
+ */
+function _longestHSeg(sections) {
+    var pts = [];
+    sections.forEach(function(sec) {
+        pts.push(sec.startPoint);
+        if (sec.bendPoints) sec.bendPoints.forEach(function(bp) { pts.push(bp); });
+        pts.push(sec.endPoint);
+    });
+    var best = null, bestLen = -1;
+    for (var i = 1; i < pts.length; i++) {
+        var a = pts[i - 1], b = pts[i];
+        if (Math.abs(a.y - b.y) < 0.5) {
+            var len = Math.abs(a.x - b.x);
+            if (len > bestLen) { bestLen = len; best = { x0: a.x, x1: b.x, y: a.y, len: len }; }
+        }
+    }
+    return best;
+}
+
+/**
+ * Place a label inline ON a horizontal line segment, centred and breaking the
+ * line. Tries the segment midpoint first, then slides left/right ALONG the
+ * line to dodge other elements (never perpendicular, so it stays on the line).
+ */
+function _placeLabelInline(x0, x1, y, w, h, ignoreOwner) {
+    var hw = w / 2, hh = h / 2, margin = 2;
+    var lo = Math.min(x0, x1), hi = Math.max(x0, x1), midX = (lo + hi) / 2;
+    var cands = [midX];
+    var step = hw + 6;
+    for (var d = step; d <= (hi - lo) / 2 + step; d += step) {
+        cands.push(midX + d);
+        cands.push(midX - d);
+    }
+    for (var i = 0; i < cands.length; i++) {
+        var cx = cands[i];
+        if (!_overlapsAny(cx - hw, y - hh, cx + hw, y + hh, margin, ignoreOwner)) {
+            _addObstacle(cx - hw, y - hh, cx + hw, y + hh, 'label');
+            return { x: cx, y: y };
+        }
+    }
+    // Fallback: centre on the segment even if crowded (still on the line).
+    _addObstacle(midX - hw, y - hh, midX + hw, y + hh, 'label');
+    return { x: midX, y: y };
+}
+
+/**
  * Build an SVG path with rounded corners at bend points.
  */
 function _buildRoundedPath(sections, radius) {
@@ -1090,8 +1188,11 @@ function _drawEdge(layer, edge, busH) {
     var tgtId = (edge.targets && edge.targets[0]) || '';
     if (!busLayout[srcId] || !busLayout[tgtId]) return;
 
-    // Register edge segments as obstacles for label placement
-    _addEdgeObstacles(sections);
+    var edgeOwner = edge.id || (srcId + '->' + tgtId);
+    // Register this line's path as an obstacle (tagged with its own id) so
+    // every OTHER label avoids it, while this line's own label may still sit
+    // on it (the label pass ignores obstacles owned by its edge).
+    _addEdgeObstacles(sections, edgeOwner);
 
     // Build SVG path with rounded corners
     var pathD = _buildRoundedPath(sections, 8);
@@ -1119,11 +1220,11 @@ function _drawEdge(layer, edge, busH) {
         .attr('r', 5).attr('fill', color)
         .attr('stroke', _darken(color, 0.25)).attr('stroke-width', 1);
 
-    // Register connection dots as obstacles
+    // Register connection dots as obstacles (owned by this edge)
     _addObstacle(sec0.startPoint.x - 6, sec0.startPoint.y - 6,
-                 sec0.startPoint.x + 6, sec0.startPoint.y + 6);
+                 sec0.startPoint.x + 6, sec0.startPoint.y + 6, edgeOwner);
     _addObstacle(secLast.endPoint.x - 6, secLast.endPoint.y - 6,
-                 secLast.endPoint.x + 6, secLast.endPoint.y + 6);
+                 secLast.endPoint.x + 6, secLast.endPoint.y + 6, edgeOwner);
 
     // Edge path. Vertical transformers draw their own stubs around the
     // symbol (below) so no line crosses over the windings.
@@ -1172,7 +1273,7 @@ function _drawEdge(layer, edge, busH) {
             .attr('fill', T.bg).attr('stroke', color).attr('stroke-width', 2.5);
         g.append('circle').attr('cx', txx).attr('cy', cBot).attr('r', r)
             .attr('fill', T.bg).attr('stroke', color).attr('stroke-width', 2.5);
-        _addObstacle(txx - r - 2, cTop - r - 2, txx + r + 2, cBot + r + 2);
+        _addObstacle(txx - r - 2, cTop - r - 2, txx + r + 2, cBot + r + 2, edgeOwner);
         mid = { x: txx, y: tmid };   // label sits beside the symbol
     } else if (edgeType === 'transformer') {
         // Non-adjacent transformer routed in a side channel: place the two
@@ -1183,7 +1284,7 @@ function _drawEdge(layer, edge, busH) {
             .attr('fill', T.bg).attr('stroke', color).attr('stroke-width', 2.5);
         g.append('circle').attr('cx', mid.x).attr('cy', mid.y + off2).attr('r', r2)
             .attr('fill', T.bg).attr('stroke', color).attr('stroke-width', 2.5);
-        _addObstacle(mid.x - r2 - 2, mid.y - off2 - r2 - 2, mid.x + r2 + 2, mid.y + off2 + r2 + 2);
+        _addObstacle(mid.x - r2 - 2, mid.y - off2 - r2 - 2, mid.x + r2 + 2, mid.y + off2 + r2 + 2, edgeOwner);
     }
 
     // Converter IEC symbol (square with ~/= or ~/Hz)
@@ -1205,38 +1306,17 @@ function _drawEdge(layer, edge, busH) {
             .attr('font-size', isAcdc ? '12px' : '10px').attr('font-weight', '700')
             .attr('fill', color).text(isAcdc ? '=' : 'Hz');
         // Register converter symbol as obstacle
-        _addObstacle(mid.x - cs - 2, mid.y - cs - 2, mid.x + cs + 2, mid.y + cs + 2);
+        _addObstacle(mid.x - cs - 2, mid.y - cs - 2, mid.x + cs + 2, mid.y + cs + 2, edgeOwner);
     }
 
-    // Label — positioned at midpoint, nudged away from bus bars
+    // Defer the label to the final pass (after every bar/equipment/edge is a
+    // registered obstacle) so it can avoid ALL elements while still resting on
+    // its own line.
     if (labelsVisible && props.label) {
-        var labelX = mid.x;
-        var labelY = mid.y;
-
-        // Offset for IEC symbols. The transformer label sits BELOW its symbol,
-        // centred on the transformer's own X, so it never reaches across into a
-        // neighbouring (e.g. parallel) transformer.
-        if (edgeType === 'transformer') labelY = mid.y + 34;
-        else if (edgeType === 'converter') labelY = mid.y + 32;
-
-        // Place label avoiding ALL obstacles (buses, edges, equipment, other labels)
-        var labelW = props.label.length * 6.5 + 16;
-        var labelH = 18;
-        var placed = _placeLabel(labelX, labelY, labelW, labelH);
-        labelX = placed.x;
-        labelY = placed.y;
-
-        g.append('rect')
-            .attr('x', labelX - labelW / 2).attr('y', labelY - 9)
-            .attr('width', labelW).attr('height', labelH).attr('rx', 4)
-            .attr('fill', T.edgeLabelBg).attr('stroke', color)
-            .attr('stroke-width', 0.8).attr('opacity', 0.95);
-        g.append('text')
-            .attr('x', labelX).attr('y', labelY + 1)
-            .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-            .attr('font-family', 'Segoe UI, Roboto, sans-serif')
-            .attr('font-size', '10px').attr('font-weight', '600')
-            .attr('fill', color).text(props.label);
+        _pendingLabels.push({
+            g: g, props: props, sections: sections, mid: mid,
+            edgeType: edgeType, color: color, owner: edgeOwner,
+        });
     }
 
     // Interaction
@@ -1757,10 +1837,11 @@ var _obstacleGrid = {};   // "gx,gy" → [{x1,y1,x2,y2}, ...]
 var _GRID_SIZE = 100;     // pixels per cell
 
 /** Register an axis-aligned rectangle as an obstacle. */
-function _addObstacle(x1, y1, x2, y2) {
+function _addObstacle(x1, y1, x2, y2, owner) {
     var ob = {
         x1: Math.min(x1, x2), y1: Math.min(y1, y2),
-        x2: Math.max(x1, x2), y2: Math.max(y1, y2)
+        x2: Math.max(x1, x2), y2: Math.max(y1, y2),
+        owner: owner   // optional tag so an element's own label can ignore it
     };
     var gx0 = Math.floor(ob.x1 / _GRID_SIZE);
     var gy0 = Math.floor(ob.y1 / _GRID_SIZE);
@@ -1775,8 +1856,8 @@ function _addObstacle(x1, y1, x2, y2) {
     }
 }
 
-/** Register edge path segments as thin obstacle boxes. */
-function _addEdgeObstacles(sections) {
+/** Register edge path segments as thin obstacle boxes (tagged with owner). */
+function _addEdgeObstacles(sections, owner) {
     var pad = 5;
     sections.forEach(function(sec) {
         var pts = [sec.startPoint];
@@ -1787,7 +1868,8 @@ function _addEdgeObstacles(sections) {
                 Math.min(pts[i-1].x, pts[i].x) - pad,
                 Math.min(pts[i-1].y, pts[i].y) - pad,
                 Math.max(pts[i-1].x, pts[i].x) + pad,
-                Math.max(pts[i-1].y, pts[i].y) + pad
+                Math.max(pts[i-1].y, pts[i].y) + pad,
+                owner
             );
         }
     });
@@ -1804,8 +1886,10 @@ function _addBusObstacle(bl, busH) {
     }
 }
 
-/** Check whether a rectangle overlaps ANY registered obstacle (spatial grid). */
-function _overlapsAny(lx1, ly1, lx2, ly2, margin) {
+/** Check whether a rectangle overlaps ANY registered obstacle (spatial grid).
+ *  Obstacles tagged with ``ignoreOwner`` are skipped, so an element's own
+ *  geometry doesn't block its own label. */
+function _overlapsAny(lx1, ly1, lx2, ly2, margin, ignoreOwner) {
     var m = margin || 0;
     var gx0 = Math.floor((lx1 - m) / _GRID_SIZE);
     var gy0 = Math.floor((ly1 - m) / _GRID_SIZE);
@@ -1817,6 +1901,7 @@ function _overlapsAny(lx1, ly1, lx2, ly2, margin) {
             if (!cell) continue;
             for (var i = 0; i < cell.length; i++) {
                 var o = cell[i];
+                if (ignoreOwner != null && o.owner === ignoreOwner) continue;
                 if (lx2 + m > o.x1 && lx1 - m < o.x2 &&
                     ly2 + m > o.y1 && ly1 - m < o.y2) {
                     return true;
@@ -1832,13 +1917,13 @@ function _overlapsAny(lx1, ly1, lx2, ly2, margin) {
  * Tries the preferred position first, then several offsets.
  * Registers the placed label as an obstacle for subsequent labels.
  */
-function _placeLabel(prefX, prefY, w, h) {
+function _placeLabel(prefX, prefY, w, h, ignoreOwner) {
     var margin = 2;
     var hw = w / 2, hh = h / 2;
 
     // Try preferred position
-    if (!_overlapsAny(prefX - hw, prefY - hh, prefX + hw, prefY + hh, margin)) {
-        _addObstacle(prefX - hw, prefY - hh, prefX + hw, prefY + hh);
+    if (!_overlapsAny(prefX - hw, prefY - hh, prefX + hw, prefY + hh, margin, ignoreOwner)) {
+        _addObstacle(prefX - hw, prefY - hh, prefX + hw, prefY + hh, 'label');
         return { x: prefX, y: prefY };
     }
 
@@ -1861,14 +1946,14 @@ function _placeLabel(prefX, prefY, w, h) {
     for (var i = 0; i < offsets.length; i++) {
         var tx = prefX + offsets[i].dx;
         var ty = prefY + offsets[i].dy;
-        if (!_overlapsAny(tx - hw, ty - hh, tx + hw, ty + hh, margin)) {
-            _addObstacle(tx - hw, ty - hh, tx + hw, ty + hh);
+        if (!_overlapsAny(tx - hw, ty - hh, tx + hw, ty + hh, margin, ignoreOwner)) {
+            _addObstacle(tx - hw, ty - hh, tx + hw, ty + hh, 'label');
             return { x: tx, y: ty };
         }
     }
 
     // Fallback: use preferred position
-    _addObstacle(prefX - hw, prefY - hh, prefX + hw, prefY + hh);
+    _addObstacle(prefX - hw, prefY - hh, prefX + hw, prefY + hh, 'label');
     return { x: prefX, y: prefY };
 }
 
