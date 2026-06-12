@@ -38,6 +38,7 @@ var labelsVisible = true;
 var _pendingLabels = [];       // edge labels drawn in a final pass (avoid all)
 var zoomBehavior = null;
 var diagramBounds = null;     // { x, y, w, h } after layout
+var _minimapBox = null;       // { ox, oy, ms, mmW, mmH } of the navigation minimap
 var currentOpsData = null;    // latest operational snapshot (parsed JSON)
 var _legendBounds = null;     // { x, y, w, h } of last drawn legend
 
@@ -83,6 +84,7 @@ function initSld() {
         .scaleExtent([0.1, 5])
         .on('zoom', function(event) {
             rootGroup.attr('transform', event.transform);
+            _updateMinimapViewport();
         });
     svg.call(zoomBehavior);
 
@@ -108,6 +110,8 @@ function initSld() {
             zoomBehavior.scaleExtent([Math.max(0.05, sc), 5]);
             // Reposition legend to new upper-right corner
             if (currentData) _drawLegend(currentData);
+            // Reposition the navigation minimap to the new bottom-left corner
+            _drawMinimap();
             // Reposition frequency gauge below legend
             if (currentOpsData) _drawFrequencyGauge(null, currentOpsData);
         }, 100);
@@ -306,6 +310,9 @@ function render(data, layouted) {
 
     // ── Fixed legend overlay (outside rootGroup — not affected by zoom) ──
     _drawLegend(data);
+
+    // ── Navigation minimap (bottom-left, fixed) for large systems ──
+    _drawMinimap();
 }
 
 
@@ -1793,6 +1800,129 @@ function fitView(animate) {
     } else {
         svg.transition().duration(350).call(zoomBehavior.transform, transform);
     }
+    // Container dimensions are valid here — (re)draw the minimap now.
+    _drawMinimap();
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// Navigation minimap — fixed overview (bottom-left) so the user does not
+// get lost when zoomed into a large system. Shows a scaled-down diagram
+// (busbars + lines) with a draggable viewport rectangle.
+// ══════════════════════════════════════════════════════════════════
+
+/** Draw / redraw the minimap overview. No-op for small diagrams. */
+function _drawMinimap() {
+    if (!svg) return;
+    svg.select('.sld-minimap').remove();
+    _minimapBox = null;
+    if (!diagramBounds || !rootGroup) return;
+    // Only worth showing for systems big enough to get lost in.
+    if (Object.keys(busLayout).length < 12) return;
+
+    var db = diagramBounds;
+    if (db.w <= 0 || db.h <= 0) return;
+    var cw = svg.node().clientWidth;
+    var ch = svg.node().clientHeight;
+    if (!cw || !ch || cw < 10 || ch < 10) return;   // dims not ready; fitView redraws
+
+    var maxW = Math.min(360, cw * 0.42);
+    var maxH = Math.min(160, ch * 0.34);
+    var ms = Math.min(maxW / db.w, maxH / db.h);
+    var mmW = db.w * ms, mmH = db.h * ms;
+    var pad = 8;
+    var ox = 12;
+    var oy = ch - mmH - 2 * pad - 12;     // bottom-left corner
+    _minimapBox = { ox: ox, oy: oy, ms: ms, mmW: mmW, mmH: mmH, pad: pad };
+
+    var mm = svg.append('g').attr('class', 'sld-minimap')
+        .attr('transform', 'translate(' + ox + ',' + oy + ')')
+        .style('cursor', 'crosshair');
+
+    // Soft drop shadow + panel background. Use fill + fill-opacity (valid SVG)
+    // rather than rgba() so it renders consistently in every SVG context.
+    mm.append('rect')
+        .attr('x', -pad - 1).attr('y', -pad - 1)
+        .attr('width', mmW + 2 * pad + 2).attr('height', mmH + 2 * pad + 2)
+        .attr('rx', 6).attr('fill', '#000000').attr('fill-opacity', 0.04);
+    mm.append('rect')
+        .attr('x', -pad).attr('y', -pad)
+        .attr('width', mmW + 2 * pad).attr('height', mmH + 2 * pad)
+        .attr('rx', 6).attr('fill', '#FFFFFF').attr('fill-opacity', 0.92)
+        .attr('stroke', T.groupBorder).attr('stroke-width', 1);
+
+    // Scaled diagram content (lines first, then bars on top).
+    var content = mm.append('g');
+    var edges = (currentLayouted && currentLayouted.edges) || [];
+    edges.forEach(function(e) {
+        var col = (e.properties && e.properties.color) || T.edgeLine;
+        (e.sections || []).forEach(function(sec) {
+            var pts = [sec.startPoint];
+            if (sec.bendPoints) sec.bendPoints.forEach(function(b) { pts.push(b); });
+            pts.push(sec.endPoint);
+            var d = '';
+            pts.forEach(function(p, i) {
+                d += (i ? 'L' : 'M') + ((p.x - db.x) * ms).toFixed(1) + ',' +
+                     ((p.y - db.y) * ms).toFixed(1);
+            });
+            content.append('path').attr('d', d).attr('fill', 'none')
+                .attr('stroke', col).attr('stroke-width', 0.5).attr('opacity', 0.45);
+        });
+    });
+    Object.keys(busLayout).forEach(function(bid) {
+        var bl = busLayout[bid];
+        var isVert = bl.orientation === 90;
+        var x = (bl.x - db.x) * ms, y = (bl.y - db.y) * ms;
+        var w = isVert ? 1.5 : Math.max(1, bl.barLen * ms);
+        var h = isVert ? Math.max(1, bl.barLen * ms) : 1.5;
+        content.append('rect').attr('x', x).attr('y', y)
+            .attr('width', w).attr('height', h).attr('fill', bl.color || '#333');
+    });
+
+    // Viewport rectangle (updated on every zoom/pan).
+    mm.append('rect').attr('class', 'sld-minimap-view')
+        .attr('fill', '#3A7BFF').attr('fill-opacity', 0.14)
+        .attr('stroke', '#3A7BFF').attr('stroke-width', 1.2)
+        .attr('pointer-events', 'none');
+
+    // Transparent hit layer: click or drag anywhere to recentre the main view.
+    var hit = mm.append('rect')
+        .attr('x', -pad).attr('y', -pad)
+        .attr('width', mmW + 2 * pad).attr('height', mmH + 2 * pad)
+        .attr('fill', 'transparent');
+
+    function _panFromEvent(event) {
+        var c = d3.pointer(event, content.node());
+        var dx = c[0] / ms + db.x, dy = c[1] / ms + db.y;
+        var t = d3.zoomTransform(svg.node());
+        var k = t.k;
+        var w2 = svg.node().clientWidth, h2 = svg.node().clientHeight;
+        var nt = d3.zoomIdentity.translate(w2 / 2 - k * dx, h2 / 2 - k * dy).scale(k);
+        svg.call(zoomBehavior.transform, nt);
+    }
+    hit.call(d3.drag().on('start', _panFromEvent).on('drag', _panFromEvent));
+    hit.on('click', function(event) { event.stopPropagation(); _panFromEvent(event); });
+    hit.on('wheel', function(event) { event.stopPropagation(); });
+
+    _updateMinimapViewport();
+}
+
+/** Move the minimap's viewport rectangle to match the current zoom/pan. */
+function _updateMinimapViewport() {
+    if (!_minimapBox || !svg || !diagramBounds) return;
+    var vr = svg.select('.sld-minimap-view');
+    if (vr.empty()) return;
+    var t = d3.zoomTransform(svg.node());
+    if (!t.k) return;
+    var cw = svg.node().clientWidth, ch = svg.node().clientHeight;
+    var db = diagramBounds, ms = _minimapBox.ms, mmW = _minimapBox.mmW, mmH = _minimapBox.mmH;
+    var vx = ((-t.x) / t.k - db.x) * ms;
+    var vy = ((-t.y) / t.k - db.y) * ms;
+    var vw = (cw / t.k) * ms, vh = (ch / t.k) * ms;
+    var x2 = Math.min(mmW, vx + vw), y2 = Math.min(mmH, vy + vh);
+    vx = Math.max(0, vx); vy = Math.max(0, vy);
+    vr.attr('x', vx).attr('y', vy)
+        .attr('width', Math.max(2, x2 - vx)).attr('height', Math.max(2, y2 - vy));
 }
 
 
