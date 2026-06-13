@@ -48,16 +48,15 @@ DEFAULT_SHORTCUTS: dict[str, str] = {
 
 DEFAULT_PREFERENCES: dict[str, dict[str, Any]] = {
     "general": {
-        "theme": "Light",
+        "theme": "GitHub Light",
         "font_size": 12,
         "language": "en",
-        "auto_validate": True,
         "auto_save": False,
         "auto_save_interval": 0,
         "startup": "empty",
         "undo_depth": 50,
         "notify_sim_complete": True,
-        "auto_open_results": False,
+        "auto_open_results": True,
         "recent_files_max": 10,
     },
     "map": {

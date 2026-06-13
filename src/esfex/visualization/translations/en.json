@@ -1033,7 +1033,6 @@
     "theme": "Theme:",
     "font_size": "Font size:",
     "language": "Language:",
-    "auto_validate": "Validate before run",
     "auto_save": "Auto-save before run",
     "auto_save_interval": "Auto-save interval (min):",
     "auto_save_interval_tip": "0 = disabled",

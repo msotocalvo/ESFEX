@@ -1044,7 +1044,6 @@
     "theme": "テーマ:",
     "font_size": "フォントサイズ:",
     "language": "言語:",
-    "auto_validate": "実行前に検証",
     "auto_save": "実行前に自動保存",
     "auto_save_interval": "自動保存間隔 (分):",
     "auto_save_interval_tip": "0 = 無効",

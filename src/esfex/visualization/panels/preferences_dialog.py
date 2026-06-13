@@ -63,7 +63,7 @@ class _GeneralPage(QWidget):
         self.theme_combo.addItems(
             ["Light", "GitHub Light", "VS Code Dark+", "Dracula", "One Dark Pro"]
         )
-        current_theme = gen.get("theme", "Light")
+        current_theme = gen.get("theme", "GitHub Light")
         idx = self.theme_combo.findText(current_theme)
         if idx >= 0:
             self.theme_combo.setCurrentIndex(idx)
@@ -96,10 +96,6 @@ class _GeneralPage(QWidget):
         behaviour = QGroupBox(tr("preferences.group_behaviour"))
         bform = QFormLayout(behaviour)
 
-        self.auto_validate = QCheckBox(tr("preferences.auto_validate"))
-        self.auto_validate.setChecked(gen.get("auto_validate", True))
-        bform.addRow(self.auto_validate)
-
         self.auto_save = QCheckBox(tr("preferences.auto_save"))
         self.auto_save.setChecked(gen.get("auto_save", False))
         bform.addRow(self.auto_save)
@@ -111,6 +107,10 @@ class _GeneralPage(QWidget):
         self.auto_save_interval.setSpecialValueText(
             tr("preferences.auto_save_interval_tip")
         )
+        # The checkbox is the on/off switch; greying out the interval when it
+        # is off makes that relationship clear.
+        self.auto_save_interval.setEnabled(self.auto_save.isChecked())
+        self.auto_save.toggled.connect(self.auto_save_interval.setEnabled)
         bform.addRow(tr("preferences.auto_save_interval"), self.auto_save_interval)
 
         self.undo_depth = QSpinBox()
@@ -119,7 +119,7 @@ class _GeneralPage(QWidget):
         bform.addRow(tr("preferences.undo_depth"), self.undo_depth)
 
         self.auto_open_results = QCheckBox(tr("preferences.auto_open_results"))
-        self.auto_open_results.setChecked(gen.get("auto_open_results", False))
+        self.auto_open_results.setChecked(gen.get("auto_open_results", True))
         bform.addRow(self.auto_open_results)
 
         self.debug_mode = QCheckBox(tr("preferences.debug_mode"))
@@ -147,7 +147,6 @@ class _GeneralPage(QWidget):
             "theme": self.theme_combo.currentText(),
             "font_size": self.font_size_spin.value(),
             "language": lang,
-            "auto_validate": self.auto_validate.isChecked(),
             "auto_save": self.auto_save.isChecked(),
             "auto_save_interval": self.auto_save_interval.value(),
             "undo_depth": self.undo_depth.value(),

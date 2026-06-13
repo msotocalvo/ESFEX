@@ -69,7 +69,7 @@ def run_studio(config=None, system: str | None = None) -> MainWindow:
     init_i18n(lang)
     splash.set_progress(25, tr("splash.init_translations"))
 
-    theme_name = prefs.get("general", {}).get("theme", "Light")
+    theme_name = prefs.get("general", {}).get("theme", "GitHub Light")
     if theme_name == "System":
         theme_name = "Light"
     font_size = prefs.get("general", {}).get("font_size", None)

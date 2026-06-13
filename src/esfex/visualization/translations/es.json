@@ -994,7 +994,6 @@
     "theme": "Tema:",
     "font_size": "Tamaño de fuente:",
     "language": "Idioma:",
-    "auto_validate": "Validar antes de ejecutar",
     "auto_save": "Auto-guardar antes de ejecutar",
     "auto_save_interval": "Intervalo de auto-guardado (min):",
     "auto_save_interval_tip": "0 = deshabilitado",

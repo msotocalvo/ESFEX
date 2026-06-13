@@ -568,13 +568,14 @@ class MainWindow(QMainWindow):
         self._auto_save_timer = QTimer(self)
         self._auto_save_timer.timeout.connect(self._on_autosave)
         _init_general = self._user_prefs.get("general", {})
-        _init_auto_save = _init_general.get("auto_save_interval", 0)
-        if _init_auto_save > 0:
+        # The checkbox is the on/off switch; the interval is the period
+        # (default 5 min when enabled without an explicit interval).
+        if _init_general.get("auto_save", False):
+            _init_auto_save = _init_general.get("auto_save_interval", 0) or 5
             self._auto_save_timer.start(_init_auto_save * 60_000)
 
         # Runtime preference flags
-        self._auto_open_results = _init_general.get("auto_open_results", False)
-        self._auto_validate_before_run = _init_general.get("auto_validate", True)
+        self._auto_open_results = _init_general.get("auto_open_results", True)
 
         # Unsaved-changes tracking. Set True on any user mutation
         # (dataMutated signal); cleared on load/save. Drives the close
@@ -2305,7 +2306,7 @@ class MainWindow(QMainWindow):
 
                 # Apply theme + font-size change live
                 general = result.get("general", {})
-                theme_name = general.get("theme", "Light")
+                theme_name = general.get("theme", "GitHub Light")
                 if theme_name == "System":
                     theme_name = "Light"
                 font_size = general.get("font_size", None)
@@ -2334,17 +2335,15 @@ class MainWindow(QMainWindow):
                 if new_lang != get_language():
                     set_language(new_lang)
 
-                # Apply general preferences
-                auto_save_interval = general.get("auto_save_interval", 0)
-                if auto_save_interval > 0:
+                # Apply general preferences. The checkbox gates auto-save; the
+                # interval is the period (default 5 min when enabled at 0).
+                if general.get("auto_save", False):
+                    auto_save_interval = general.get("auto_save_interval", 0) or 5
                     self._auto_save_timer.start(auto_save_interval * 60_000)
                 else:
                     self._auto_save_timer.stop()
                 self._auto_open_results = general.get(
-                    "auto_open_results", False,
-                )
-                self._auto_validate_before_run = general.get(
-                    "auto_validate", True,
+                    "auto_open_results", True,
                 )
 
                 # Apply editor preferences
@@ -7019,12 +7018,11 @@ class MainWindow(QMainWindow):
 
     def _on_run_requested(self):
         """Save current config to a temp file and launch the simulation."""
+        # A loaded YAML is not required: a system built in the GUI is run by
+        # synthesizing a default base config (same as save / autosave do), so
+        # the validate→run flow works on freshly created systems too.
         if self._loaded_config is None:
-            QMessageBox.warning(
-                self, tr("common.warning"),
-                "Import a YAML configuration before running the simulation.",
-            )
-            return
+            self._loaded_config = self._create_default_config()
 
         import tempfile
         from pathlib import Path
@@ -7184,6 +7182,9 @@ class MainWindow(QMainWindow):
             output_dir = getattr(self, "_last_output_dir", "")
             if output_dir:
                 self._results_panel.set_output_dir(output_dir)
+            # Auto-open the results view (preference).
+            if getattr(self, "_auto_open_results", False):
+                self._show_results()
         else:
             # Re-enable Run so the user can retry after fixing issues
             self.toolbar.set_run_enabled(True)
