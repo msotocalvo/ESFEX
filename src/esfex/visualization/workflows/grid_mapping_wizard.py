@@ -106,6 +106,7 @@ class GridMappingWizard(QDialog):
         self._step_build = GridMappingBuildStep(
             self._model, self._all_states,
             self._switch_system_fn, self._create_system_fn,
+            map_widget=self._map_widget,
         )
         # Review and Simplify steps were dropped: Review couldn't realistically
         # be used to triage thousands of features by hand, and simplification

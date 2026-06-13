@@ -952,15 +952,21 @@ class GridMappingBuildStep(QWidget):
     def __init__(
         self, model=None, all_states=None,
         switch_system_fn=None, create_system_fn=None, parent=None,
+        map_widget=None,
     ):
         super().__init__(parent)
         self._model = model
         self._all_states = all_states if all_states is not None else {}
         self._switch_system_fn = switch_system_fn
         self._create_system_fn = create_system_fn
+        self._map_widget = map_widget
         self._built = False
         self._connected = False
         self._clustering_worker = None
+        # Manual node definition (map-click centroid picking + editable table)
+        self._awaiting_centroid = False   # True while a map click should drop a node
+        self._table_updating = False      # guard against itemChanged feedback loops
+        self._polygon = []
         # Snapshots of each target system's state taken right before its
         # first build. Lets us restore the baseline if the user goes
         # Back and re-builds — otherwise build_grid_from_features would
@@ -978,9 +984,9 @@ class GridMappingBuildStep(QWidget):
         layout = QVBoxLayout(scroll_content)
 
         layout.addWidget(QLabel(
-            "<b>Step 4: Build & Connect</b><br>"
-            "Select the target system, optionally auto-create nodes via "
-            "spatial clustering, build the network, then auto-connect "
+            "<b>Step 2: Build & Connect</b><br>"
+            "Select the target system, create nodes (auto-cluster or define "
+            "them manually on the map), build the network, then auto-connect "
             "isolated sub-networks."
         ))
 
@@ -1078,6 +1084,39 @@ class GridMappingBuildStep(QWidget):
         node_cols.addLayout(node_left, 2)
         node_cols.addLayout(node_right, 3)
         node_lay.addWidget(self._node_options_widget)
+
+        # ── Manual node definition (shown when auto-create is OFF) ────
+        # A node is a POINT (centroid); its territory is the Voronoi cell
+        # drawn live on the map. Buses snap to the nearest node centroid,
+        # so the visible cells match where elements actually land.
+        self._manual_nodes_widget = QWidget()
+        man_lay = QVBoxLayout(self._manual_nodes_widget)
+        man_lay.setContentsMargins(0, 0, 0, 0)
+        man_lay.addWidget(QLabel(
+            "Define nodes by clicking the map or editing the table. Each "
+            "node's Voronoi territory is drawn on the map."
+        ))
+        self._node_table = QTableWidget(0, 3)
+        self._node_table.setHorizontalHeaderLabels(["Name", "Lat", "Lng"])
+        self._node_table.horizontalHeader().setStretchLastSection(True)
+        self._node_table.setMaximumHeight(180)
+        self._node_table.itemChanged.connect(self._on_node_table_changed)
+        man_lay.addWidget(self._node_table)
+        man_btns = QHBoxLayout()
+        self._btn_add_node_map = QPushButton("Add node (click map)")
+        self._btn_add_node_map.clicked.connect(self._add_node_by_map)
+        self._btn_add_node_map.setEnabled(self._map_widget is not None)
+        man_btns.addWidget(self._btn_add_node_map)
+        self._btn_add_node_row = QPushButton("Add node (row)")
+        self._btn_add_node_row.clicked.connect(self._add_node_by_row)
+        man_btns.addWidget(self._btn_add_node_row)
+        self._btn_del_node = QPushButton("Delete selected")
+        self._btn_del_node.clicked.connect(self._delete_selected_node)
+        man_btns.addWidget(self._btn_del_node)
+        man_btns.addStretch()
+        man_lay.addLayout(man_btns)
+        self._manual_nodes_widget.setVisible(False)
+        node_lay.addWidget(self._manual_nodes_widget)
 
         # Clustering progress bar — full width below the two columns
         self._cluster_progress = QProgressBar()
@@ -1241,6 +1280,19 @@ class GridMappingBuildStep(QWidget):
         scroll.setWidget(scroll_content)
         outer_layout.addWidget(scroll)
 
+        # Receive map clicks for manual centroid placement. The same
+        # ``elementPlaced`` signal MainWindow listens to is shared; our handler
+        # is gated by ``_awaiting_centroid`` so it only fires when the user
+        # pressed "Add node (click map)" here, and MainWindow's own handler
+        # no-ops because its ``_pick_centroid_node`` is None.
+        if self._map_widget is not None:
+            self._map_widget.bridge.elementPlaced.connect(
+                self._on_map_centroid_picked
+            )
+            self._map_widget.bridge.modeReset.connect(
+                self._on_centroid_pick_cancelled
+            )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -1272,6 +1324,9 @@ class GridMappingBuildStep(QWidget):
         self._cluster_progress.setVisible(False)
         self._result_text.clear()
         self._refresh_system_combo()
+        if not self._chk_auto_nodes.isChecked():
+            self._refresh_node_table()
+            self._redraw_voronoi()
 
     def is_valid(self) -> bool:
         return self._built
@@ -1362,6 +1417,15 @@ class GridMappingBuildStep(QWidget):
         # spin boxes, criteria checkboxes, criterion info label) in
         # one shot — no per-widget tracking needed.
         self._node_options_widget.setEnabled(checked)
+        # Manual node definition is the inverse: the table + map-click tools
+        # appear only when auto-create is OFF (this IS the "nodes pre-exist"
+        # path that _do_build builds on).
+        self._manual_nodes_widget.setVisible(not checked)
+        if not checked:
+            self._refresh_node_table()
+            self._redraw_voronoi()
+        else:
+            self._clear_voronoi()
 
     def _on_criterion_toggled(self, _checked: bool = False):
         # Update description to show info about all checked criteria
@@ -1376,6 +1440,152 @@ class GridMappingBuildStep(QWidget):
             self._lbl_criterion_info.setText(
                 "Select at least one criterion."
             )
+
+    # ------------------------------------------------------------------
+    # Manual node definition (point centroid + live Voronoi territory)
+    # ------------------------------------------------------------------
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._chk_auto_nodes.isChecked():
+            self._refresh_node_table()
+            self._redraw_voronoi()
+
+    def _refresh_node_table(self):
+        """Rebuild the node table from the current system state."""
+        if self._model is None:
+            return
+        self._table_updating = True
+        try:
+            nodes = list(self._model.state.nodes)
+            self._node_table.setRowCount(len(nodes))
+            for i, node in enumerate(nodes):
+                self._node_table.setItem(i, 0, QTableWidgetItem(node.name))
+                self._node_table.setItem(
+                    i, 1, QTableWidgetItem(f"{node.centroid_lat:.5f}"))
+                self._node_table.setItem(
+                    i, 2, QTableWidgetItem(f"{node.centroid_lng:.5f}"))
+        finally:
+            self._table_updating = False
+
+    def _on_node_table_changed(self, item):
+        if self._table_updating or self._model is None:
+            return
+        row = item.row()
+        if row >= len(self._model.state.nodes):
+            return
+        col = item.column()
+        text = item.text().strip()
+        if col == 0:
+            self._model.update_node(row, name=text or f"Node {row}")
+        else:
+            try:
+                val = float(text)
+            except ValueError:
+                self._refresh_node_table()   # revert to stored value
+                return
+            key = "centroid_lat" if col == 1 else "centroid_lng"
+            self._model.update_node(row, **{key: val})
+        self._redraw_voronoi()
+
+    def _add_node_by_row(self):
+        if self._model is None:
+            return
+        # Seed the centroid at the domain centre so it's immediately valid;
+        # the user refines lat/lng in the table or by dragging on the map.
+        if self._polygon:
+            lat = sum(p[0] for p in self._polygon) / len(self._polygon)
+            lng = sum(p[1] for p in self._polygon) / len(self._polygon)
+        else:
+            lat, lng = 0.0, 0.0
+        idx = self._model.add_node()
+        self._model.update_node(idx, centroid_lat=lat, centroid_lng=lng)
+        self._refresh_node_table()
+        self._redraw_voronoi()
+
+    def _delete_selected_node(self):
+        if self._model is None:
+            return
+        row = self._node_table.currentRow()
+        if row < 0 or row >= len(self._model.state.nodes):
+            return
+        self._model.remove_node(row)
+        self._refresh_node_table()
+        self._redraw_voronoi()
+
+    def _add_node_by_map(self):
+        if self._map_widget is None:
+            return
+        self._awaiting_centroid = True
+        self._lbl_cluster_status.setText(
+            "Click on the map to place the node centroid (ESC to cancel)."
+        )
+        self._map_widget.set_mode("pick_centroid")
+
+    def _on_map_centroid_picked(self, mode: str, lat: float, lng: float):
+        # Only our own "Add node (click map)" requests act; MainWindow's
+        # handler ignores these because its _pick_centroid_node is None.
+        if mode != "pick_centroid" or not self._awaiting_centroid:
+            return
+        self._awaiting_centroid = False
+        if self._model is not None:
+            idx = self._model.add_node()
+            self._model.update_node(idx, centroid_lat=lat, centroid_lng=lng)
+            self._refresh_node_table()
+            self._redraw_voronoi()
+        self._lbl_cluster_status.setText("")
+        # Back to navigation so later clicks don't keep dropping nodes.
+        try:
+            self._map_widget.set_mode("select")
+        except Exception:
+            pass
+
+    def _on_centroid_pick_cancelled(self):
+        if self._awaiting_centroid:
+            self._awaiting_centroid = False
+            self._lbl_cluster_status.setText("")
+
+    def _redraw_voronoi(self):
+        """Draw each node's Voronoi territory clipped to the domain polygon."""
+        if self._map_widget is None or self._chk_auto_nodes.isChecked():
+            return
+        import json
+
+        from esfex.visualization.workflows.voronoi_cells import (
+            compute_voronoi_cells,
+        )
+
+        nodes = list(self._model.state.nodes) if self._model else []
+        centroids = [(n.centroid_lat, n.centroid_lng) for n in nodes]
+        if not centroids or len(self._polygon) < 3:
+            self._clear_voronoi()
+            return
+        cells = compute_voronoi_cells(centroids, self._polygon)
+        features = []
+        for node, ring in zip(nodes, cells):
+            if len(ring) < 3:
+                continue
+            coords = [[lng, lat] for lat, lng in ring]  # GeoJSON is [lng, lat]
+            coords.append(coords[0])                     # close the ring
+            features.append({
+                "type": "Feature",
+                "properties": {"name": node.name},
+                "geometry": {"type": "Polygon", "coordinates": [coords]},
+            })
+        if not features:
+            self._clear_voronoi()
+            return
+        fc = {"type": "FeatureCollection", "features": features}
+        self._map_widget.add_geo_asset(
+            "voronoi_cells", json.dumps(fc), "Node territories", "#3498db"
+        )
+
+    def _clear_voronoi(self):
+        if self._map_widget is not None:
+            try:
+                self._map_widget.remove_geo_asset("voronoi_cells")
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Build
@@ -1415,6 +1625,8 @@ class GridMappingBuildStep(QWidget):
                 )
                 self._btn_build.setEnabled(True)
                 return
+            # Drop the territory overlay before drawing the real network.
+            self._clear_voronoi()
             self._run_build()
 
     def _start_clustering(self):
@@ -4267,8 +4479,11 @@ class GridMappingDemandStep(QWidget):
         self._wb_data: dict = {}
         self._era5_data: dict = {}
         self._forecast_result = None
+        self._forecast_result_raw = None   # uncorrected demand_multi_year copy
         self._forecast_nodes: list = []
         self._forecast_worker = None
+        # User-supplied observed hourly demand per node index (validation).
+        self._observed: dict[int, "GuiNodeDemand"] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -4440,6 +4655,71 @@ class GridMappingDemandStep(QWidget):
         rg.addWidget(self._btn_view_demand)
 
         layout.addWidget(results_group)
+
+        # ==============================================================
+        # Section 2b: Validate against observed demand (optional)
+        # ==============================================================
+        val_group = QGroupBox("2b. Validate against observed demand (optional)")
+        vg = QVBoxLayout(val_group)
+        _val_intro = QLabel(
+            "Import your own observed hourly demand for a node to validate the "
+            "forecast and, optionally, bend it toward the observation. The "
+            "correction scales the forecast by a month×hour factor derived "
+            "from the base year and applies it to every year, so the future "
+            "growth trajectory is preserved."
+        )
+        _val_intro.setWordWrap(True)
+        vg.addWidget(_val_intro)
+
+        imp_row = QHBoxLayout()
+        imp_row.addWidget(QLabel("Node:"))
+        self._combo_obs_node = QComboBox()
+        imp_row.addWidget(self._combo_obs_node, 1)
+        self._btn_load_observed = QPushButton("Load observed CSV…")
+        self._btn_load_observed.clicked.connect(self._load_observed_csv)
+        self._btn_load_observed.setEnabled(False)
+        imp_row.addWidget(self._btn_load_observed)
+        self._btn_clear_observed = QPushButton("Clear all")
+        self._btn_clear_observed.clicked.connect(self._clear_observed)
+        imp_row.addWidget(self._btn_clear_observed)
+        vg.addLayout(imp_row)
+
+        self._obs_metrics_table = QTableWidget(0, 6)
+        self._obs_metrics_table.setHorizontalHeaderLabels([
+            "Node", "MAPE %", "RMSE (MW)", "Peak err %", "Energy err %", "Corr",
+        ])
+        self._obs_metrics_table.horizontalHeader().setStretchLastSection(True)
+        self._obs_metrics_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
+        self._obs_metrics_table.setMinimumHeight(90)
+        vg.addWidget(self._obs_metrics_table)
+
+        val_btns = QHBoxLayout()
+        self._btn_overlay_observed = QPushButton("Overlay")
+        self._btn_overlay_observed.setToolTip(
+            "Open the chart with the observed series overlaid on the forecast.")
+        self._btn_overlay_observed.clicked.connect(self._on_view_demand)
+        self._btn_overlay_observed.setEnabled(False)
+        val_btns.addWidget(self._btn_overlay_observed)
+        self._chk_apply_correction = QCheckBox("Apply month×hour correction")
+        self._chk_apply_correction.setToolTip(
+            "Scale the forecast so the base year matches your observed series "
+            "in each (month, hour) bin; the same factor is applied to all "
+            "years so growth is preserved."
+        )
+        self._chk_apply_correction.toggled.connect(
+            self._on_apply_correction_toggled)
+        self._chk_apply_correction.setEnabled(False)
+        val_btns.addWidget(self._chk_apply_correction)
+        val_btns.addStretch()
+        vg.addLayout(val_btns)
+
+        self._lbl_validation_status = QLabel("")
+        self._lbl_validation_status.setWordWrap(True)
+        self._lbl_validation_status.setStyleSheet("color: #888; font-size: 11px;")
+        vg.addWidget(self._lbl_validation_status)
+
+        layout.addWidget(val_group)
 
         # ==============================================================
         # Section 3: Bus Distribution (existing logic preserved)
@@ -4972,7 +5252,14 @@ class GridMappingDemandStep(QWidget):
 
     def _populate_forecast_results(self, result, nodes, num_nodes):
         """Render the forecast table + summary on the GUI thread."""
+        import numpy as np
         self._forecast_result = result
+        # Cache the uncorrected multi-year series so the observed-data
+        # correction can be toggled on/off reversibly.
+        _my = getattr(result, "demand_multi_year", None)
+        self._forecast_result_raw = (
+            np.array(_my, dtype=float).copy() if _my is not None else None
+        )
         self._forecast_progress.setValue(95)
 
         self._forecast_table.setRowCount(num_nodes)
@@ -5000,6 +5287,16 @@ class GridMappingDemandStep(QWidget):
         self._forecast_nodes = list(nodes)
         self._btn_view_demand.setEnabled(True)
 
+        # Observed-demand validation: refresh the node picker, reset the
+        # correction toggle (a fresh forecast), and re-score any observed
+        # series the user already loaded.
+        self._refresh_obs_node_combo()
+        self._btn_load_observed.setEnabled(True)
+        self._chk_apply_correction.blockSignals(True)
+        self._chk_apply_correction.setChecked(False)
+        self._chk_apply_correction.blockSignals(False)
+        self._refresh_validation()
+
         # Enable bus distribution
         has_eligible = len(self._targets) > 0
         self._btn_fetch_bld.setEnabled(has_eligible and self._bounds is not None)
@@ -5025,16 +5322,21 @@ class GridMappingDemandStep(QWidget):
         series = np.asarray(series)
         ncols = series.shape[1] if series.ndim > 1 else 1
 
-        entries: list[tuple[str, GuiNodeDemand]] = []
+        entries: list = []
         for i, node in enumerate(self._forecast_nodes):
             if i >= ncols:
                 break
             col = series[:, i] if series.ndim > 1 else series
             data = [float(x) for x in col]
-            entries.append((node.name, GuiNodeDemand(
+            fc = GuiNodeDemand(
                 data=data, num_hours=len(data),
                 peak_mw=float(max(data, default=0.0)),
-                total_mwh=float(sum(data)))))
+                total_mwh=float(sum(data)))
+            obs = self._observed.get(i)
+            # 3-tuple (name, forecast, observed) when an observed series exists
+            # for this node so the visualizer can overlay it.
+            entries.append((node.name, fc, obs) if obs is not None
+                           else (node.name, fc))
         if entries:
             try:
                 start_year = int(self._spin_base_year.value())
@@ -5042,6 +5344,179 @@ class GridMappingDemandStep(QWidget):
                 start_year = 2025
             DemandVisualizerDialog(
                 entries, self, start_year=start_year).exec()
+
+    # ==================================================================
+    # Observed-demand validation & post-hoc correction
+    # ==================================================================
+
+    def _refresh_obs_node_combo(self):
+        self._combo_obs_node.blockSignals(True)
+        self._combo_obs_node.clear()
+        for i, node in enumerate(self._forecast_nodes):
+            tag = " ✓" if i in self._observed else ""
+            self._combo_obs_node.addItem(f"{node.name}{tag}", i)
+        self._combo_obs_node.blockSignals(False)
+
+    def _load_observed_csv(self):
+        if not self._forecast_nodes:
+            return
+        idx = self._combo_obs_node.currentData()
+        if idx is None:
+            return
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load observed demand CSV", "",
+            "Demand files (*.csv *.xlsx *.xls);;All files (*)")
+        if not path:
+            return
+        try:
+            import pandas as pd
+            if path.lower().endswith((".xlsx", ".xls")):
+                df = pd.read_excel(path, header=None)
+            else:
+                df = pd.read_csv(path, header=None)
+            series = df.iloc[:, 0].astype(float)   # one series = selected node
+            data = [float(x) for x in series.tolist()]
+        except Exception as exc:
+            QMessageBox.warning(self, "Load failed",
+                                f"Could not read the file:\n{exc}")
+            return
+        from esfex.visualization.data.gui_model import GuiNodeDemand
+        self._observed[idx] = GuiNodeDemand(
+            csv_path=path, data=data, num_hours=len(data),
+            peak_mw=float(max(data, default=0.0)),
+            total_mwh=float(sum(data)))
+        self._refresh_obs_node_combo()
+        pos = self._combo_obs_node.findData(idx)
+        if pos >= 0:
+            self._combo_obs_node.setCurrentIndex(pos)
+        self._refresh_validation()
+
+    def _clear_observed(self):
+        self._observed.clear()
+        if self._chk_apply_correction.isChecked():
+            self._chk_apply_correction.setChecked(False)  # restores raw
+        self._refresh_obs_node_combo()
+        self._refresh_validation()
+
+    def _forecast_dims(self):
+        """Return (raw_multi_year, n_per_year, base_year, resolution_hours)."""
+        my = self._forecast_result_raw
+        if my is None:
+            return None, 0, 2025, 1.0
+        cfg = getattr(self._forecast_result, "config", None)
+        years = getattr(cfg, "simulation_years", 0) or 1
+        try:
+            base_year = int(self._spin_base_year.value())
+        except Exception:
+            base_year = getattr(cfg, "base_year", 2025)
+        res = getattr(self._forecast_result, "resolution_hours", 1.0) or 1.0
+        n = my.shape[0] // years if my.ndim > 1 else len(my) // years
+        return my, max(int(n), 1), base_year, float(res)
+
+    def _refresh_validation(self):
+        """Recompute per-node metrics and enable/disable the controls."""
+        from esfex.visualization.workflows.metrics_validation import (
+            forecast_metrics,
+        )
+        has_obs = bool(self._observed) and self._forecast_result_raw is not None
+        self._btn_overlay_observed.setEnabled(has_obs)
+        self._chk_apply_correction.setEnabled(has_obs)
+        rows = sorted(self._observed.keys())
+        self._obs_metrics_table.setRowCount(len(rows))
+        if not has_obs:
+            self._lbl_validation_status.setText("")
+            return
+        raw, n_per_year, base_year, res = self._forecast_dims()
+        for r, idx in enumerate(rows):
+            name = (self._forecast_nodes[idx].name
+                    if idx < len(self._forecast_nodes) else f"node_{idx}")
+            obs = self._observed[idx].data or []
+            fc = raw[:n_per_year, idx] if raw.ndim > 1 else raw[:n_per_year]
+            m = forecast_metrics(obs, fc)
+            vals = [name,
+                    f"{m.get('mape', float('nan')):.1f}",
+                    f"{m.get('rmse', float('nan')):.1f}",
+                    f"{m.get('peak_err', float('nan')):+.1f}",
+                    f"{m.get('energy_err', float('nan')):+.1f}",
+                    f"{m.get('corr', float('nan')):.2f}"]
+            for c, v in enumerate(vals):
+                self._obs_metrics_table.setItem(r, c, QTableWidgetItem(str(v)))
+        self._lbl_validation_status.setText(
+            f"{len(rows)} node(s) with observed data — metrics compare the "
+            "base year against your series.")
+
+    def _on_apply_correction_toggled(self, checked: bool):
+        if self._forecast_result is None or self._forecast_result_raw is None:
+            return
+        raw = self._forecast_result_raw
+        if not checked:
+            self._forecast_result.demand_multi_year = raw.copy()
+            self._recompute_node_stats(raw)
+            self._lbl_validation_status.setText("Correction off (raw forecast).")
+            return
+        from esfex.visualization.workflows.metrics_validation import (
+            apply_factors, month_hour_factors,
+        )
+        _, n_per_year, base_year, res = self._forecast_dims()
+        corrected = raw.copy()
+        ncols = raw.shape[1] if raw.ndim > 1 else 1
+        n_applied = 0
+        for idx, obs_demand in self._observed.items():
+            if idx >= ncols:
+                continue
+            obs = obs_demand.data or []
+            fc_base = raw[:n_per_year, idx] if raw.ndim > 1 else raw[:n_per_year]
+            factors = month_hour_factors(obs, fc_base, base_year, res)
+            col = raw[:, idx] if raw.ndim > 1 else raw
+            new_col = apply_factors(col, factors, base_year, n_per_year, res)
+            if raw.ndim > 1:
+                corrected[:, idx] = new_col
+            else:
+                corrected = new_col
+            n_applied += 1
+        self._forecast_result.demand_multi_year = corrected
+        self._recompute_node_stats(corrected)
+        self._lbl_validation_status.setText(
+            f"Correction applied to {n_applied} node(s); growth preserved.")
+
+    def _recompute_node_stats(self, multi_year):
+        """Refresh per-node peak/GWh/LF + the results table + system total."""
+        import numpy as np
+        result = self._forecast_result
+        if result is None or multi_year is None:
+            return
+        my = np.asarray(multi_year)
+        _, n_per_year, _, _ = self._forecast_dims()
+        ncols = my.shape[1] if my.ndim > 1 else 1
+        peaks, gwhs, lfs = [], [], []
+        for i in range(ncols):
+            base = my[:n_per_year, i] if my.ndim > 1 else my[:n_per_year]
+            peak = float(base.max()) if base.size else 0.0
+            gwh = float(base.sum()) / 1000.0
+            lf = float(base.mean() / peak) if peak > 0 else 0.0
+            peaks.append(peak)
+            gwhs.append(gwh)
+            lfs.append(lf)
+            if i < self._forecast_table.rowCount():
+                self._forecast_table.setItem(i, 1, QTableWidgetItem(f"{peak:.1f}"))
+                self._forecast_table.setItem(i, 2, QTableWidgetItem(f"{gwh:.1f}"))
+                self._forecast_table.setItem(i, 3, QTableWidgetItem(f"{lf:.3f}"))
+        result.peak_mw = peaks
+        result.annual_gwh = gwhs
+        result.load_factor = lfs
+        result.total_peak_mw = float(sum(peaks))
+        result.total_annual_gwh = float(sum(gwhs))
+        if my.ndim > 1 and n_per_year > 0:
+            sys_base = my[:n_per_year, :].sum(axis=1)
+            sp = float(sys_base.max()) if sys_base.size else 0.0
+            result.total_load_factor = (
+                float(sys_base.mean() / sp) if sp > 0 else 0.0)
+        self._lbl_forecast_summary.setText(
+            f"<b>System total:</b> Peak={result.total_peak_mw:.1f} MW, "
+            f"Annual={result.total_annual_gwh:.1f} GWh, "
+            f"LF={result.total_load_factor:.3f} "
+            f"&mdash; Source: {result.demand_source}")
 
     # ==================================================================
     # Section 2: Eligible nodes detection (for bus distribution)

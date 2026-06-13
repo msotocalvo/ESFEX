@@ -214,7 +214,8 @@ class DemandVisualizerWidget(QWidget):
     def __init__(self, parent=None, start_year: int = _DEFAULT_START_YEAR):
         super().__init__(parent)
         # list of (key, label, series) — key is node id/name or _SYSTEM_KEY
-        self._entries: list[tuple[str, str, np.ndarray]] = []
+        # entry = (key, label, forecast_series, observed_series_or_None)
+        self._entries: list[tuple] = []
         self._tmp_path: Optional[str] = None
         self._start_year = int(start_year) if start_year else _DEFAULT_START_YEAR
 
@@ -271,30 +272,39 @@ class DemandVisualizerWidget(QWidget):
         self._tmp_path = None
 
     # ── Public API ────────────────────────────────────────────────
-    def set_nodes(self, nodes: Sequence[tuple[str, object]]):
+    def set_nodes(self, nodes: Sequence[tuple]):
         """Populate from ``(name, GuiNodeDemand)`` pairs.
 
-        Nodes without a demand series are skipped. When more than one node has
-        data, a synthetic "System total" entry (the element-wise sum) is added.
+        Each item may also be a 3-tuple ``(name, forecast, observed)`` to
+        overlay an observed reference series on the chart. Nodes without a
+        (forecast) series are skipped. When more than one node has data, a
+        synthetic "System total" entry (the element-wise sum) is added.
         """
         self._entries = []
-        per_node: list[tuple[str, str, np.ndarray]] = []
-        for name, demand in nodes:
+        # entry = (key, label, forecast_series, observed_series_or_None)
+        per_node: list[tuple] = []
+        for item in nodes:
+            name, demand = item[0], item[1]
+            observed = item[2] if len(item) > 2 else None
             series = _series_of(demand)
             if series.size:
-                per_node.append((name, name, series))
+                obs = _series_of(observed) if observed is not None else None
+                if obs is not None and obs.size == 0:
+                    obs = None
+                per_node.append((name, name, series, obs))
 
         if len(per_node) > 1:
             # Align on the shortest series for the aggregate.
-            n = min(s.size for _, _, s in per_node)
-            total = np.sum([s[:n] for _, _, s in per_node], axis=0)
+            n = min(s.size for _, _, s, _ in per_node)
+            total = np.sum([s[:n] for _, _, s, _ in per_node], axis=0)
             self._entries.append(
-                (_SYSTEM_KEY, tr("demand_visualizer.system_total"), total))
+                (_SYSTEM_KEY, tr("demand_visualizer.system_total"), total, None))
         self._entries.extend(per_node)
 
         self._node_combo.blockSignals(True)
         self._node_combo.clear()
-        for key, label, _ in self._entries:
+        for entry in self._entries:
+            key, label = entry[0], entry[1]
             self._node_combo.addItem(label, key)
         self._node_combo.blockSignals(False)
         self._on_node_changed()
@@ -315,6 +325,13 @@ class DemandVisualizerWidget(QWidget):
             return None
         return self._entries[idx][2]
 
+    def _current_observed(self) -> Optional[np.ndarray]:
+        idx = self._node_combo.currentIndex()
+        if idx < 0 or idx >= len(self._entries):
+            return None
+        entry = self._entries[idx]
+        return entry[3] if len(entry) > 3 else None
+
     def _on_node_changed(self, *args):
         self._refresh()
         self._update_stats()
@@ -331,7 +348,7 @@ class DemandVisualizerWidget(QWidget):
                                showarrow=False, font=dict(size=15))
         else:
             try:
-                fig = self._build_figure(chart, series)
+                fig = self._build_figure(chart, series, self._current_observed())
             except Exception as exc:  # pragma: no cover - defensive
                 logger.exception("Demand chart build failed")
                 fig = go.Figure()
@@ -367,13 +384,14 @@ class DemandVisualizerWidget(QWidget):
             except OSError:
                 pass
 
-    def _build_figure(self, chart: str, series: np.ndarray) -> go.Figure:
+    def _build_figure(self, chart: str, series: np.ndarray,
+                      observed: Optional[np.ndarray] = None) -> go.Figure:
         label = self._node_combo.currentText()
         if chart == CHART_DURATION:
-            return self._duration_figure(series, label)
+            return self._duration_figure(series, label, observed)
         if chart == CHART_HEATMAP:
             return self._heatmap_figure(series, label)
-        return self._hourly_figure(series, label)
+        return self._hourly_figure(series, label, observed)
 
     def _add_mean_line(self, fig, mean: float):
         fig.add_hline(
@@ -382,13 +400,14 @@ class DemandVisualizerWidget(QWidget):
             annotation_position="top left",
             annotation_font=dict(color=_MEAN_COLOR, size=11))
 
-    def _hourly_figure(self, series, label) -> go.Figure:
+    def _hourly_figure(self, series, label, observed=None) -> go.Figure:
         dates = _date_index(series.size, self._start_year)
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=dates, y=series, mode="lines",
-            line=dict(color=_accent(), width=1), name=label,
+            line=dict(color=_accent(), width=1), name=f"{label} (forecast)",
             hovertemplate="%{x|%Y-%m-%d %H:%M}<br>%{y:.1f} MW<extra></extra>"))
+        self._add_observed_trace(fig, observed)
         self._add_mean_line(fig, float(series.mean()))
         fig.update_layout(
             title=tr("demand_visualizer.title_hourly", name=label),
@@ -397,14 +416,32 @@ class DemandVisualizerWidget(QWidget):
             yaxis=dict(title=tr("demand_visualizer.axis_mw")))
         return fig
 
-    def _duration_figure(self, series, label) -> go.Figure:
+    def _add_observed_trace(self, fig, observed):
+        """Overlay a dashed observed reference series (aligned to the start)."""
+        if observed is None or getattr(observed, "size", 0) == 0:
+            return
+        dates = _date_index(observed.size, self._start_year)
+        fig.add_trace(go.Scatter(
+            x=dates, y=observed, mode="lines",
+            line=dict(color="#e74c3c", width=1.2, dash="dot"), name="Observed",
+            hovertemplate="%{x|%Y-%m-%d %H:%M}<br>%{y:.1f} MW "
+                          "(obs)<extra></extra>"))
+
+    def _duration_figure(self, series, label, observed=None) -> go.Figure:
         ordered = np.sort(series)[::-1]
         pct = np.linspace(0, 100, ordered.size)
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=pct, y=ordered, mode="lines", fill="tozeroy",
-            line=dict(color=_accent(), width=2), name=label,
+            line=dict(color=_accent(), width=2), name=f"{label} (forecast)",
             hovertemplate="%{x:.1f}%<br>%{y:.1f} MW<extra></extra>"))
+        if observed is not None and getattr(observed, "size", 0):
+            obs_ord = np.sort(observed)[::-1]
+            fig.add_trace(go.Scatter(
+                x=np.linspace(0, 100, obs_ord.size), y=obs_ord, mode="lines",
+                line=dict(color="#e74c3c", width=1.6, dash="dot"),
+                name="Observed",
+                hovertemplate="%{x:.1f}%<br>%{y:.1f} MW (obs)<extra></extra>"))
         self._add_mean_line(fig, float(series.mean()))
         fig.update_layout(
             title=tr("demand_visualizer.title_duration", name=label),
