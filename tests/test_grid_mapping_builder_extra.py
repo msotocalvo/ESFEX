@@ -1807,3 +1807,26 @@ class TestVoltageConsistency:
         pairs = {frozenset((t.from_voltage_kv, t.to_voltage_kv))
                  for t in state.transformers}
         assert pairs == {frozenset((220.0, 132.0)), frozenset((132.0, 110.0))}
+
+    def test_voltage_less_line_does_not_span_levels(self):
+        # An OSM line with NO voltage between a 220 kV and a 110 kV substation
+        # must not become a 220↔110 mismatch line: infer one voltage (the
+        # higher) for both ends and step down with an auto-transformer. (#18)
+        state = _make_state(buses={})
+        model = MockGuiModel(state)
+        feats = [
+            _feat("substation", name="S220", lat=21.0, lng=-82.0,
+                  voltage_kv=220.0),
+            _feat("substation", name="S110", lat=21.5, lng=-82.5,
+                  voltage_kv=110.0),
+            _feat("line", name="L", voltage_kv=0.0,
+                  line_coords=[(21.0, -82.0), (21.5, -82.5)]),
+        ]
+        gmb.build_grid_from_features(model, feats, bus_strategy="per_voltage",
+                                     snap_threshold_km=5.0, faithful=False)
+        assert _mismatch_lines(state) == []
+        # the voltage-less line took a single inferred voltage (the higher end)
+        assert state.transmission_lines[0].voltage_kv == 220.0
+        # a 220/110 step-down transformer ties the 110 kV substation in
+        assert any({t.from_voltage_kv, t.to_voltage_kv} == {220.0, 110.0}
+                   for t in state.transformers)

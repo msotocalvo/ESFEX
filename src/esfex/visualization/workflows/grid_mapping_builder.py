@@ -1022,18 +1022,31 @@ def _create_line(
     lat1, lng1 = line.line_coords[0]
     lat2, lng2 = line.line_coords[-1]
 
-    # Find/create buses at endpoints. A bus has a SINGLE voltage, so a line
-    # must terminate on a bus of its OWN voltage (different voltages require a
-    # transformer). Pass the line's voltage so `_ensure_bus_at` snaps only to a
-    # same-voltage bus and any new endpoint bus inherits the line voltage —
-    # instead of attaching to whatever bus is geographically nearest, which used
-    # to put e.g. 110 kV lines straight onto 132/138 kV substation buses. (#18)
+    # The line's voltage. A bus has a SINGLE voltage, so a line must terminate
+    # on a bus of its OWN voltage (different voltages require a transformer).
+    # OSM frequently omits the line voltage; a line still has one, so for a
+    # voltage-less line infer ONE voltage from its endpoints — the higher of the
+    # two nearest substation voltages (the lower end steps down through a
+    # transformer) — and snap BOTH ends to it. This applies the same-voltage
+    # rule to voltage-less lines too, instead of letting them span e.g. 110 kV
+    # to 220 kV (which used to attach a line straight across both levels). (#18)
+    v_line = float(line.voltage_kv) if (line.voltage_kv and line.voltage_kv > 0) else 0.0
+    if v_line <= 0:
+        from esfex.visualization.data.geo_asset_parser import _find_nearest_bus
+        ends: list[float] = []
+        for la, lo in ((lat1, lng1), (lat2, lng2)):
+            nb, nd = _find_nearest_bus(la, lo, state, _snap_km=snap_km, voltage_kv=0.0)
+            if nb is not None and nd < snap_km and (state.buses[nb].voltage_kv or 0) > 0:
+                ends.append(float(state.buses[nb].voltage_kv))
+        if ends:
+            v_line = max(ends)
+
     line_props: dict = {
         "frequency_hz": line.frequency_hz,
         "current_type": line.current_type,
     }
-    if line.voltage_kv and line.voltage_kv > 0:
-        line_props["voltage_kv"] = line.voltage_kv
+    if v_line > 0:
+        line_props["voltage_kv"] = v_line
     from_idx, from_bus = _ensure_bus_at(
         state, lat1, lng1, f"{line.name} Start",
         snap_km, result, props=line_props,
@@ -1060,7 +1073,7 @@ def _create_line(
     lid = f"line_{state._next_line_id}"
     state._next_line_id += 1
 
-    v = line.voltage_kv if line.voltage_kv > 0 else None
+    v = v_line if v_line > 0 else None
 
     # Effective capacity: explicit OSM rating if present, else the thermal
     # rating of the nearest standard line type (consistent with the impedance
@@ -1069,7 +1082,7 @@ def _create_line(
         effective_cap = line.capacity_mw * max(1, line.num_circuits)
     else:
         effective_cap = estimate_line_capacity_mw(
-            line.voltage_kv, line.num_circuits)
+            v_line, line.num_circuits)
 
     # Compute geometric length and physical impedance/susceptance.
     # ``length_km`` left None for cases without an explicit voltage —
