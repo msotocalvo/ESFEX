@@ -1018,10 +1018,11 @@ class TestFuelConfig:
 
 class TestTechnology:
     def test_add_auto_id(self, model):
-        tid = model.add_technology("Solar", "Renewable", invest_cost=900.0, junk=1)
+        tid = model.add_technology(
+            "Solar", "Renewable", degradation_rate=0.9, junk=1)
         assert tid == "tech_0"
         assert model.state._next_tech_id == 1
-        assert model.state.technologies[tid].invest_cost == 900.0
+        assert model.state.technologies[tid].degradation_rate == 0.9
 
     def test_add_explicit_numeric_id_advances(self, model):
         model.add_technology(tech_id="tech_7")
@@ -1038,9 +1039,9 @@ class TestTechnology:
 
     def test_update_remove(self, model):
         tid = model.add_technology("Solar")
-        model.update_technology(tid, invest_cost=10.0, nope=1)
-        assert model.state.technologies[tid].invest_cost == 10.0
-        model.update_technology("missing", invest_cost=1.0)
+        model.update_technology(tid, degradation_rate=10.0, nope=1)
+        assert model.state.technologies[tid].degradation_rate == 10.0
+        model.update_technology("missing", degradation_rate=1.0)
         model.remove_technology(tid)
         assert tid not in model.state.technologies
         model.remove_technology("missing")

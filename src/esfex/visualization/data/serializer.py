@@ -1606,10 +1606,6 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
                 degradation_rate=tdata.get('degradation_rate', 0.0),
                 eff_at_rated=tdata.get('eff_at_rated', 0.35),
                 eff_at_min=tdata.get('eff_at_min', 0.25),
-                invest_cost=tdata.get('invest_cost', 0.0),
-                invest_max_power=tdata.get('invest_max_power', 0.0),
-                invest_cost_energy=tdata.get('invest_cost_energy', 0.0),
-                invest_max_capacity=tdata.get('invest_max_capacity', 0.0),
             )
             if tdata.get('color'):
                 tech.style.color = tdata['color']
@@ -1632,8 +1628,6 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
         for tid, tconf in opt_techs.items():
             if hasattr(tconf, 'name'):
                 # TechnologyConfig or BatteryTechnologyConfig Pydantic model
-                invest_cost_val = tconf.invest_cost[0] if hasattr(tconf, 'invest_cost') and tconf.invest_cost else 0.0
-                invest_max_val = tconf.invest_max_power[0] if hasattr(tconf, 'invest_max_power') and tconf.invest_max_power else 0.0
                 tech = GuiTechnology(
                     tech_id=tid,
                     name=tconf.name,
@@ -1643,8 +1637,6 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
                     degradation_rate=tconf.degradation_rate[0] if hasattr(tconf, 'degradation_rate') and tconf.degradation_rate else 0.0,
                     eff_at_rated=tconf.eff_at_rated[0] if hasattr(tconf, 'eff_at_rated') and tconf.eff_at_rated else 0.35,
                     eff_at_min=tconf.eff_at_min[0] if hasattr(tconf, 'eff_at_min') and tconf.eff_at_min else 0.25,
-                    invest_cost=invest_cost_val,
-                    invest_max_power=invest_max_val,
                 )
                 if getattr(tconf, 'color', None):
                     tech.style.color = tconf.color
@@ -1666,10 +1658,6 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
                     fuel="",
                     life_time=getattr(btconf, 'lifetime', 15),
                     degradation_rate=btconf.degradation_rate[0] if hasattr(btconf, 'degradation_rate') and btconf.degradation_rate else 0.0,
-                    invest_cost=btconf.invest_cost_power[0] if hasattr(btconf, 'invest_cost_power') and btconf.invest_cost_power else 0.0,
-                    invest_max_power=btconf.invest_max_power[0] if hasattr(btconf, 'invest_max_power') and btconf.invest_max_power else 0.0,
-                    invest_cost_energy=btconf.invest_cost_energy[0] if hasattr(btconf, 'invest_cost_energy') and btconf.invest_cost_energy else 0.0,
-                    invest_max_capacity=btconf.invest_max_capacity[0] if hasattr(btconf, 'invest_max_capacity') and btconf.invest_max_capacity else 0.0,
                 )
                 if getattr(btconf, 'color', None):
                     tech.style.color = btconf.color
@@ -3492,10 +3480,6 @@ def _apply_gui_state_to_dict(state: GuiSystemState, sys_dict: dict):
                 "degradation_rate": tech.degradation_rate,
                 "eff_at_rated": tech.eff_at_rated,
                 "eff_at_min": tech.eff_at_min,
-                "invest_cost": tech.invest_cost,
-                "invest_max_power": tech.invest_max_power,
-                "invest_cost_energy": tech.invest_cost_energy,
-                "invest_max_capacity": tech.invest_max_capacity,
             }
             if tech.style.color:
                 td["color"] = tech.style.color

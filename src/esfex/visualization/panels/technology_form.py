@@ -93,44 +93,10 @@ class TechnologyForm(QWidget):
 
         outer.addWidget(id_grp)
 
-        # --- Investment ---
-        inv_grp = QGroupBox(tr("technology_form.group_investment"))
-        inv_layout = QFormLayout(inv_grp)
-        inv_layout.setContentsMargins(6, 6, 6, 6)
-        inv_layout.setSpacing(4)
-
-        self._invest_cost = QDoubleSpinBox()
-        self._invest_cost.setRange(0, 1e9)
-        self._invest_cost.setDecimals(2)
-        self._invest_cost.setSuffix(" $/MW")
-        self._invest_cost.editingFinished.connect(self._on_changed)
-        inv_layout.addRow(tr("technology_form.invest_cost"), self._invest_cost)
-
-        self._invest_max_power = QDoubleSpinBox()
-        self._invest_max_power.setRange(0, 1e9)
-        self._invest_max_power.setDecimals(2)
-        self._invest_max_power.setSuffix(" MW")
-        self._invest_max_power.editingFinished.connect(self._on_changed)
-        inv_layout.addRow(tr("technology_form.max_invest_power"), self._invest_max_power)
-
-        # Storage-specific investment fields
-        self._invest_cost_energy_label = QLabel(tr("technology_form.invest_cost_energy"))
-        self._invest_cost_energy = QDoubleSpinBox()
-        self._invest_cost_energy.setRange(0, 1e9)
-        self._invest_cost_energy.setDecimals(2)
-        self._invest_cost_energy.setSuffix(" $/MWh")
-        self._invest_cost_energy.editingFinished.connect(self._on_changed)
-        inv_layout.addRow(self._invest_cost_energy_label, self._invest_cost_energy)
-
-        self._invest_max_capacity_label = QLabel(tr("technology_form.max_invest_capacity"))
-        self._invest_max_capacity = QDoubleSpinBox()
-        self._invest_max_capacity.setRange(0, 1e9)
-        self._invest_max_capacity.setDecimals(2)
-        self._invest_max_capacity.setSuffix(" MWh")
-        self._invest_max_capacity.editingFinished.connect(self._on_changed)
-        inv_layout.addRow(self._invest_max_capacity_label, self._invest_max_capacity)
-
-        outer.addWidget(inv_grp)
+        # Investment limits/costs are NOT defined here: per-node × per-technology
+        # investment is edited in the Investment Portfolio (the only place that
+        # reaches the optimizer). This catalog is for the technology definition
+        # (category, fuel, efficiency, lifetime, color, element linking).
 
         # --- Basic Operations ---
         ops_grp = QGroupBox(tr("technology_form.group_basic"))
@@ -179,30 +145,16 @@ class TechnologyForm(QWidget):
 
         outer.addStretch()
 
-        # Initial storage field visibility
-        self._update_storage_visibility()
-
     def _field_map(self):
         return [
             ("name", self._name),
             ("category", self._category),
             ("fuel", self._fuel),
-            ("invest_cost", self._invest_cost),
-            ("invest_max_power", self._invest_max_power),
-            ("invest_cost_energy", self._invest_cost_energy),
-            ("invest_max_capacity", self._invest_max_capacity),
             ("life_time", self._life_time),
             ("degradation_rate", self._degradation_rate),
             ("eff_at_rated", self._eff_at_rated),
             ("eff_at_min", self._eff_at_min),
         ]
-
-    def _update_storage_visibility(self):
-        is_storage = self._category.currentText() == "Storage"
-        self._invest_cost_energy.setVisible(is_storage)
-        self._invest_cost_energy_label.setVisible(is_storage)
-        self._invest_max_capacity.setVisible(is_storage)
-        self._invest_max_capacity_label.setVisible(is_storage)
 
     def load_elements(self, element_ids: list[str]):
         """Load multiple technologies for batch editing."""
@@ -221,7 +173,6 @@ class TechnologyForm(QWidget):
             val = collect_attr(instances, attr)
             set_widget_value(w, val)
 
-        self._update_storage_visibility()
         self._updating = False
 
     def load_element(self, element_id: str):
@@ -252,16 +203,11 @@ class TechnologyForm(QWidget):
         if fuel_idx >= 0:
             self._fuel.setCurrentIndex(fuel_idx)
         self._fuel.blockSignals(False)
-        self._invest_cost.setValue(tech.invest_cost)
-        self._invest_max_power.setValue(tech.invest_max_power)
-        self._invest_cost_energy.setValue(tech.invest_cost_energy)
-        self._invest_max_capacity.setValue(tech.invest_max_capacity)
         self._life_time.setValue(tech.life_time)
         self._degradation_rate.setValue(tech.degradation_rate)
         self._eff_at_rated.setValue(tech.eff_at_rated)
         self._eff_at_min.setValue(tech.eff_at_min)
         self._update_color_btn_style(tech.style.color or "")
-        self._update_storage_visibility()
         self._updating = False
 
     def _update_color_btn_style(self, hex_color: str):
@@ -288,7 +234,6 @@ class TechnologyForm(QWidget):
             self._on_changed()
 
     def _on_category_changed(self, _text: str):
-        self._update_storage_visibility()
         if not self._updating:
             self._on_changed()
 

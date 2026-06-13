@@ -1225,22 +1225,14 @@ class TestGuiTechnology:
         assert tech.degradation_rate == 0.0
         assert tech.eff_at_rated == 0.35
         assert tech.eff_at_min == 0.25
-        assert tech.invest_cost == 0.0
-        assert tech.invest_max_power == 0.0
-        assert tech.invest_cost_energy == 0.0
-        assert tech.invest_max_capacity == 0.0
         assert isinstance(tech.style, VisualStyle)
+        # Investment fields were removed from the technology catalog — per-node
+        # × per-technology investment lives in the Investment Portfolio.
+        assert not hasattr(tech, "invest_max_power")
 
     def test_storage_technology(self):
-        tech = GuiTechnology(
-            tech_id="tech_1",
-            category="Storage",
-            invest_cost_energy=200.0,
-            invest_max_capacity=1000.0,
-        )
+        tech = GuiTechnology(tech_id="tech_1", category="Storage")
         assert tech.category == "Storage"
-        assert tech.invest_cost_energy == 200.0
-        assert tech.invest_max_capacity == 1000.0
 
 
 # ======================================================================

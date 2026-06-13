@@ -962,11 +962,9 @@ class GuiTechnology:
     degradation_rate: float = 0.0
     eff_at_rated: float = 0.35
     eff_at_min: float = 0.25
-    invest_cost: float = 0.0       # $/MW
-    invest_max_power: float = 0.0  # MW
-    # Storage-specific (only when category=Storage)
-    invest_cost_energy: float = 0.0   # $/MWh
-    invest_max_capacity: float = 0.0  # MWh
+    # Investment cost/limit fields were removed: per-node × per-technology
+    # investment is defined in the Investment Portfolio (the only path that
+    # reaches the optimizer), not on the technology catalog entry.
     style: VisualStyle = field(default_factory=VisualStyle)
 
 
