@@ -21,6 +21,8 @@
     "import_geo": "Import Geo Asset...",
     "save": "Save",
     "export_as": "Export As...",
+    "export_project": "Export Project...",
+    "import_project": "Import Project...",
     "load_results": "Load Results…",
     "preferences": "Preferences...",
     "workflows": "&Workflows",
@@ -1378,6 +1380,13 @@
     "enable": "Enable"
   },
   "messages": {
+    "export_project_title": "Project Exported",
+    "export_project_done": "Exported {n} data file(s) to:\n{path}",
+    "export_project_missing": "Some referenced files were not found and were left out of the bundle:\n{files}",
+    "export_project_error": "Failed to export project:\n{e}",
+    "import_project_dest": "Choose a folder to extract the project into",
+    "import_project_done": "Project imported to {path}",
+    "import_project_error": "Failed to import project:\n{e}",
     "error": "Error",
     "warning": "Warning",
     "new_system_title": "New System",

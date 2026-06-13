@@ -21,6 +21,8 @@
     "import_geo": "Importar Recurso Geográfico...",
     "save": "Guardar",
     "export_as": "Exportar Como...",
+    "export_project": "Exportar Proyecto...",
+    "import_project": "Importar Proyecto...",
     "load_results": "Cargar Resultados…",
     "preferences": "Preferencias...",
     "workflows": "&Flujos de Trabajo",
@@ -1339,6 +1341,13 @@
     "enable": "Habilitar"
   },
   "messages": {
+    "export_project_title": "Proyecto Exportado",
+    "export_project_done": "Se exportaron {n} archivo(s) de datos a:\n{path}",
+    "export_project_missing": "Algunos archivos referenciados no se encontraron y quedaron fuera del paquete:\n{files}",
+    "export_project_error": "Falló la exportación del proyecto:\n{e}",
+    "import_project_dest": "Elige una carpeta donde extraer el proyecto",
+    "import_project_done": "Proyecto importado en {path}",
+    "import_project_error": "Falló la importación del proyecto:\n{e}",
     "error": "Error",
     "warning": "Advertencia",
     "new_system_title": "Nuevo Sistema",

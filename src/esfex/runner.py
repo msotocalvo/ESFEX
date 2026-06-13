@@ -1437,6 +1437,20 @@ class Orchestrator:
         total_hours_needed = years * hours_per_year
         years_list = list(range(start_year, start_year + years))
 
+        # Demand files resolve relative to the config directory first (so a
+        # portable project — config + demand/ next to it — runs from anywhere),
+        # falling back to the path as-given (CWD-relative or absolute) for
+        # backward compatibility with existing configs.
+        config_dir = Path(self.config_path).parent if self.config_path else Path('.')
+
+        def _resolve_demand(p) -> Path:
+            fp = Path(p)
+            if not fp.is_absolute():
+                cand = config_dir / fp
+                if cand.exists():
+                    return cand
+            return fp
+
         date_start_str = getattr(self.config, 'date_start', "01/01/2025 00:00")
         start_date = datetime.strptime(date_start_str, "%d/%m/%Y %H:%M")
         time_index = [start_date + timedelta(hours=i) for i in range(total_hours_needed)]
@@ -1450,14 +1464,14 @@ class Orchestrator:
 
             # Determine file list: prefer demand_paths (per-node), fall back to demand_path
             if sys.demand_paths:
-                file_list = [Path(p) for p in sys.demand_paths]
+                file_list = [_resolve_demand(p) for p in sys.demand_paths]
                 if len(file_list) != expected_nodes:
                     raise ValueError(
                         f"System '{sname}': demand_paths has {len(file_list)} entries "
                         f"but system has {expected_nodes} nodes"
                     )
             elif sys.demand_path:
-                dp = Path(sys.demand_path)
+                dp = _resolve_demand(sys.demand_path)
                 # Single file — check if it's a multi-column file or a single-node file
                 suffix = dp.suffix.lower()
                 test_df = pd.read_csv(dp, header=None, nrows=2) if suffix == ".csv" else pd.read_excel(dp, nrows=2)

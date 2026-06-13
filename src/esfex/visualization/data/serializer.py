@@ -188,14 +188,18 @@ def _gui_data_to_cost_curve_config(curve_type: str, data: dict | None) -> dict |
 # =====================================================================
 
 
-def config_to_gui_states(config: ESFEXConfig) -> dict[str, GuiSystemState]:
+def config_to_gui_states(
+    config: ESFEXConfig, base_dir: "str | Path | None" = None,
+) -> dict[str, GuiSystemState]:
     """Convert a :class:`ESFEXConfig` into editable GUI states.
 
-    Returns one :class:`GuiSystemState` per system.
+    ``base_dir`` is the directory the config was loaded from; relative demand
+    paths resolve under it first (portable projects), then the CWD. Returns one
+    :class:`GuiSystemState` per system.
     """
     states: dict[str, GuiSystemState] = {}
     for sys_name, sys_config in config.systems.items():
-        states[sys_name] = _system_to_gui_state(sys_config)
+        states[sys_name] = _system_to_gui_state(sys_config, base_dir=base_dir)
     return states
 
 
@@ -389,7 +393,8 @@ def inter_system_links_to_config_dict(
     meta["systems_links"] = systems_links
 
 
-def _load_demand_csv(demand_path: str | None, nodes: list[GuiNode]) -> None:
+def _load_demand_csv(demand_path: str | None, nodes: list[GuiNode],
+                     base_dir: "str | Path | None" = None) -> None:
     """Load demand CSV/Excel and populate each node's demand data.
 
     File-shape semantics:
@@ -415,12 +420,25 @@ def _load_demand_csv(demand_path: str | None, nodes: list[GuiNode]) -> None:
     # since users do sometimes point at data outside cwd intentionally.
     if not p.is_absolute():
         from esfex.utils.paths import safe_resolve_under
-        try:
-            p = safe_resolve_under(Path.cwd(), demand_path)
-        except ValueError:
+        # Prefer the config directory (portable projects: config + demand/
+        # alongside it), then fall back to the CWD for legacy configs.
+        roots = []
+        if base_dir is not None:
+            roots.append(Path(base_dir))
+        roots.append(Path.cwd())
+        p = None
+        for root in roots:
+            try:
+                cand = safe_resolve_under(root, demand_path)
+            except ValueError:
+                continue
+            p = cand
+            if cand.is_file():
+                break
+        if p is None:
             import logging
             logging.getLogger(__name__).warning(
-                "Refusing demand_path %r: traversal out of cwd not allowed",
+                "Refusing demand_path %r: traversal out of allowed roots",
                 demand_path,
             )
             return
@@ -476,7 +494,8 @@ def _parse_allowed_technologies(raw) -> dict[str, float]:
     return {}
 
 
-def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
+def _system_to_gui_state(sys: SystemConfig,
+                         base_dir: "str | Path | None" = None) -> GuiSystemState:
     n = sys.num_nodes
 
     # Nodes — populate centroid from node_coordinates when available
@@ -1411,9 +1430,10 @@ def _system_to_gui_state(sys: SystemConfig) -> GuiSystemState:
     if sys.demand_paths:
         for ni, dpath in enumerate(sys.demand_paths):
             if ni < len(nodes):
-                _load_demand_csv(dpath or sys.demand_path, [nodes[ni]])
+                _load_demand_csv(dpath or sys.demand_path, [nodes[ni]],
+                                 base_dir=base_dir)
     elif sys.demand_path:
-        _load_demand_csv(sys.demand_path, nodes)
+        _load_demand_csv(sys.demand_path, nodes, base_dir=base_dir)
 
     # Build investment portfolio from invest fields in YAML config
     investment_portfolio: dict[str, GuiInvestmentEntry] = {}

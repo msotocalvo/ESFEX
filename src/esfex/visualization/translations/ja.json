@@ -21,6 +21,8 @@
     "import_geo": "地理資産をインポート...",
     "save": "保存",
     "export_as": "名前を付けてエクスポート...",
+    "export_project": "プロジェクトをエクスポート...",
+    "import_project": "プロジェクトをインポート...",
     "load_results": "結果を読み込み…",
     "preferences": "環境設定...",
     "workflows": "&ワークフロー",
@@ -1390,6 +1392,13 @@
     "enable": "有効化"
   },
   "messages": {
+    "export_project_title": "プロジェクトをエクスポートしました",
+    "export_project_done": "{n}個のデータファイルをエクスポートしました:\n{path}",
+    "export_project_missing": "一部の参照ファイルが見つからず、パッケージに含まれませんでした:\n{files}",
+    "export_project_error": "プロジェクトのエクスポートに失敗しました:\n{e}",
+    "import_project_dest": "プロジェクトを展開するフォルダを選択",
+    "import_project_done": "プロジェクトを {path} にインポートしました",
+    "import_project_error": "プロジェクトのインポートに失敗しました:\n{e}",
     "error": "エラー",
     "warning": "警告",
     "new_system_title": "新規システム",

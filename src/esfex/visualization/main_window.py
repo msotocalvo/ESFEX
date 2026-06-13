@@ -1636,6 +1636,10 @@ class MainWindow(QMainWindow):
         self._act_import_geo.triggered.connect(self._on_import_geo_asset)
         file_menu.addAction(self._act_import_geo)
 
+        self._act_import_project = QAction(tr("menu.import_project"), self)
+        self._act_import_project.triggered.connect(self._on_import_project)
+        file_menu.addAction(self._act_import_project)
+
         file_menu.addSeparator()
 
         self._act_save = QAction(tr("menu.save"), self)
@@ -1647,6 +1651,10 @@ class MainWindow(QMainWindow):
         self._act_export.setShortcut(QKeySequence("Ctrl+Shift+S"))
         self._act_export.triggered.connect(self._on_export)
         file_menu.addAction(self._act_export)
+
+        self._act_export_project = QAction(tr("menu.export_project"), self)
+        self._act_export_project.triggered.connect(self._on_export_project)
+        file_menu.addAction(self._act_export_project)
 
         file_menu.addSeparator()
 
@@ -1777,8 +1785,10 @@ class MainWindow(QMainWindow):
         self._act_import_config.setText(tr("menu.import_config"))
         self._act_import_system.setText(tr("menu.import_system"))
         self._act_import_geo.setText(tr("menu.import_geo"))
+        self._act_import_project.setText(tr("menu.import_project"))
         self._act_save.setText(tr("menu.save"))
         self._act_export.setText(tr("menu.export_as"))
+        self._act_export_project.setText(tr("menu.export_project"))
         self._act_load_results.setText(tr("menu.load_results"))
         self._act_preferences.setText(tr("menu.preferences"))
 
@@ -2978,6 +2988,97 @@ class MainWindow(QMainWindow):
             self._config_path = path
             self._save_config_file(path)
 
+    def _on_export_project(self):
+        """Export the project (config + every referenced data file) to a
+        portable ``.esfexp`` bundle."""
+        import datetime as _dt
+
+        from PySide6.QtWidgets import QFileDialog
+
+        from esfex import __version__ as _ver
+        from esfex.visualization.data.project_bundle import (
+            PROJECT_SUFFIX,
+            export_project,
+        )
+
+        # Persist current editing state, like _save_config_file does.
+        self._ensure_system_exists()
+        if self._current_system_name:
+            self._all_states[self._current_system_name] = self.model.state
+        if self._loaded_config is None:
+            self._loaded_config = self._create_default_config()
+
+        default_name = (
+            (Path(self._config_path).stem if self._config_path else "project")
+            + PROJECT_SUFFIX
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("menu.export_project"), default_name,
+            f"ESFEX Project (*{PROJECT_SUFFIX})",
+        )
+        if not path:
+            return
+        if not path.endswith(PROJECT_SUFFIX):
+            path += PROJECT_SUFFIX
+
+        src_base = (str(Path(self._config_path).parent)
+                    if self._config_path else None)
+        try:
+            report = export_project(
+                self._all_states, self._loaded_config, path,
+                inter_system_links=self.model.inter_system_links,
+                global_settings=self.model.global_settings,
+                stochastic_scenarios=self.model.stochastic_scenarios,
+                app_version=_ver,
+                created_at=_dt.datetime.now().isoformat(timespec="seconds"),
+                project_name=Path(path).stem,
+                src_base=src_base,
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, tr("common.error"),
+                tr("messages.export_project_error", e=e))
+            return
+
+        msg = tr("messages.export_project_done", n=len(report.bundled), path=path)
+        if report.missing:
+            msg += "\n\n" + tr(
+                "messages.export_project_missing",
+                files="\n".join(f"• {m}" for m in report.missing))
+        QMessageBox.information(
+            self, tr("messages.export_project_title"), msg)
+
+    def _on_import_project(self):
+        """Import a ``.esfexp`` bundle: extract to a project folder and load it."""
+        from PySide6.QtWidgets import QFileDialog
+
+        from esfex.visualization.data.project_bundle import (
+            PROJECT_SUFFIX,
+            import_project,
+        )
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("menu.import_project"), "",
+            f"ESFEX Project (*{PROJECT_SUFFIX})",
+        )
+        if not path:
+            return
+        dest = QFileDialog.getExistingDirectory(
+            self, tr("messages.import_project_dest"))
+        if not dest:
+            return
+        dest_dir = Path(dest) / Path(path).stem
+        try:
+            cfg_path = import_project(path, dest_dir)
+        except Exception as e:
+            QMessageBox.critical(
+                self, tr("common.error"),
+                tr("messages.import_project_error", e=e))
+            return
+        self._load_config_file(str(cfg_path))
+        self.statusBar().showMessage(
+            tr("messages.import_project_done", path=str(dest_dir)))
+
     # ------------------------------------------------------------------
     # Map bridge slots
     # ------------------------------------------------------------------
@@ -3016,6 +3117,8 @@ class MainWindow(QMainWindow):
         """Run ``_populate_from_config`` after the first paint."""
         self._populate_from_config(
             self._loaded_config, raw_dict=self._raw_config_dict,
+            base_dir=(str(Path(self._config_path).parent)
+                      if self._config_path else None),
         )
         self.console.update_namespace(
             config=self._loaded_config, state=self.model.state,
@@ -6623,8 +6726,13 @@ class MainWindow(QMainWindow):
             self.model.add_node(name="Node 0")
         self._update_map_actions_state()
 
-    def _populate_from_config(self, config, *, raw_dict: dict | None = None):
-        """Load a ESFEXConfig and populate GUI."""
+    def _populate_from_config(self, config, *, raw_dict: dict | None = None,
+                              base_dir: "str | None" = None):
+        """Load a ESFEXConfig and populate GUI.
+
+        ``base_dir`` is the directory the config was loaded from; relative
+        demand paths resolve under it (portable projects), then the CWD.
+        """
         from esfex.config.schema import ESFEXConfig
 
         if not isinstance(config, ESFEXConfig):
@@ -6640,7 +6748,7 @@ class MainWindow(QMainWindow):
         self._vs_ranges = None
         self.model.stochastic_scenarios = config_to_stochastic_scenarios(config)
 
-        states = config_to_gui_states(config)
+        states = config_to_gui_states(config, base_dir=base_dir)
         self._all_states = states
         system_names = list(states.keys())
         first_name = system_names[0]
@@ -6814,7 +6922,10 @@ class MainWindow(QMainWindow):
                 self._invalidate_results_dialog_cache()
 
                 _phase("Building GUI model…")
-                self._populate_from_config(config, raw_dict=raw_dict)
+                self._populate_from_config(
+                    config, raw_dict=raw_dict,
+                    base_dir=str(Path(path).parent),
+                )
                 self.model.clear_undo()
                 self.console.update_namespace(config=config, state=self.model.state)
                 # Freshly loaded → no unsaved changes; refresh window title.
