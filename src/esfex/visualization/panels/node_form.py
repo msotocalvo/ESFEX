@@ -38,7 +38,6 @@ from esfex.visualization.data.gui_model import (
     GuiModel,
     GuiNodeDemand,
     GuiNonElectricDemand,
-    NodeTechnology,
 )
 
 
@@ -69,18 +68,6 @@ class NodeForm(QWidget):
 
         # ── Tab 1: Demand ─────────────────────────────────────────
         self._build_demand_tab()
-
-        # The technology combo lists the system's technology catalog
-        # (``state.technologies``). Keep it in sync when that catalog changes
-        # while this panel is open — otherwise a newly created technology
-        # wouldn't be selectable until the node is reopened.
-        for _sig in ("technologyAdded", "technologyRemoved", "technologyUpdated"):
-            getattr(self._model, _sig).connect(self._on_system_tech_changed)
-
-    def _on_system_tech_changed(self, *_args):
-        """Refresh the technology combo when system technologies change."""
-        if self._current_node is not None:
-            self._populate_tech_combo(self._current_node)
 
     # ==============================================================
     # General tab construction
@@ -147,42 +134,11 @@ class NodeForm(QWidget):
         self._invest_max.editingFinished.connect(self._on_changed)
         form.addRow(tr("node_form.invest_max"), self._invest_max)
 
-        # ── Technologies ──────────────────────────────────
-        tech_group = QGroupBox(tr("node_form.technologies"))
-        tech_outer = QVBoxLayout(tech_group)
-
-        tech_btn_row = QHBoxLayout()
-        self._tech_combo = QComboBox()
-        self._tech_combo.setMinimumWidth(100)
-        tech_btn_row.addWidget(self._tech_combo)
-        self._tech_add_btn = QPushButton(tr("node_form.add_btn"))
-        self._tech_add_btn.clicked.connect(self._on_add_technology)
-        tech_btn_row.addWidget(self._tech_add_btn)
-        self._tech_remove_btn = QPushButton(tr("node_form.remove_btn"))
-        self._tech_remove_btn.clicked.connect(self._on_remove_technology)
-        tech_btn_row.addWidget(self._tech_remove_btn)
-        tech_btn_row.addStretch()
-        tech_outer.addLayout(tech_btn_row)
-
-        self._tech_table = QTableWidget(0, 5)
-        self._tech_table.setHorizontalHeader(WordWrapHeaderView(self._tech_table))
-        self._tech_table.setHorizontalHeaderLabels([
-            tr("node_form.tech_name"),
-            tr("node_form.tech_category"),
-            tr("node_form.tech_existing"),
-            tr("node_form.tech_invest_cost"),
-            tr("node_form.tech_max_invest"),
-        ])
-        self._tech_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch,
-        )
-        self._tech_table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows,
-        )
-        self._tech_table.cellChanged.connect(self._on_tech_table_changed)
-        tech_outer.addWidget(self._tech_table)
-
-        form.addRow(tech_group)
+        # The per-node "Technologies" section was removed: it stored
+        # NodeTechnology rows that were never serialized and never reached the
+        # optimizer. Per-node × per-technology investment limits are defined in
+        # the Investment Portfolio (which edits the elements' per-node
+        # invest_cost / invest_max_power arrays the solver actually uses).
 
         self._tabs.addTab(content, tr("node_form.tab_general"))
 
@@ -711,135 +667,6 @@ class NodeForm(QWidget):
                 pass
 
     # ==============================================================
-    # Technologies
-    # ==============================================================
-
-    _TECH_CATEGORIES = [
-        "generation", "storage", "fuel", "transmission",
-        "fuel_transport", "transformation",
-    ]
-
-    # Catalog category (Renewable / Non-renewable / Storage / Electrolyzer)
-    # → per-node investment category used by the table/combo.
-    _CATALOG_CAT_MAP = {
-        "renewable": "generation",
-        "non-renewable": "generation",
-        "storage": "storage",
-        "electrolyzer": "fuel",
-    }
-
-    def _populate_tech_combo(self, node_idx: int):
-        """Fill the technology combo from the system technology catalog.
-
-        Lists every ``GuiTechnology`` defined in the system (``state.
-        technologies``) that the node hasn't added yet, so a technology
-        created anywhere in the system is immediately selectable here.
-        """
-        self._tech_combo.blockSignals(True)
-        self._tech_combo.clear()
-        node = self._model.get_node(node_idx)
-        existing = {t.name for t in node.technologies} if node else set()
-        techs = sorted(
-            self._model.state.technologies.values(),
-            key=lambda t: t.name.lower(),
-        )
-        for tech in techs:
-            if tech.name in existing:
-                continue
-            self._tech_combo.addItem(tech.name, tech.tech_id)
-        self._tech_combo.blockSignals(False)
-
-    def _populate_tech_table(self, node):
-        self._tech_table.blockSignals(True)
-        self._tech_table.setRowCount(0)
-
-        for tech in node.technologies:
-            row = self._tech_table.rowCount()
-            self._tech_table.insertRow(row)
-            self._tech_table.setItem(row, 0, QTableWidgetItem(tech.name))
-            combo = QComboBox()
-            combo.addItems(self._TECH_CATEGORIES)
-            combo.setCurrentText(tech.category)
-            combo.currentTextChanged.connect(self._on_tech_table_changed)
-            self._tech_table.setCellWidget(row, 1, combo)
-            self._tech_table.setItem(
-                row, 2, QTableWidgetItem(f"{tech.existing_capacity:.1f}"),
-            )
-            self._tech_table.setItem(
-                row, 3, QTableWidgetItem(f"{tech.invest_cost:.0f}"),
-            )
-            self._tech_table.setItem(
-                row, 4, QTableWidgetItem(f"{tech.invest_max:.1f}"),
-            )
-
-        self._tech_table.blockSignals(False)
-
-    def _on_add_technology(self):
-        if self._current_node is None:
-            return
-        node = self._model.get_node(self._current_node)
-        if node is None:
-            return
-        name = self._tech_combo.currentText()
-        if not name:
-            return
-        # Resolve the catalog entry to copy its category + investment defaults.
-        tech_id = self._tech_combo.currentData()
-        catalog = self._model.state.technologies.get(tech_id) if tech_id else None
-        if catalog is None:
-            catalog = next(
-                (t for t in self._model.state.technologies.values()
-                 if t.name == name), None)
-        category = self._CATALOG_CAT_MAP.get(
-            (catalog.category if catalog else "").lower(), "generation")
-
-        tech = NodeTechnology(
-            name=name, category=category,
-            invest_cost=catalog.invest_cost if catalog else 0.0,
-            invest_max=catalog.invest_max_power if catalog else 0.0,
-        )
-        node.technologies.append(tech)
-        self._populate_tech_table(node)
-        self._populate_tech_combo(self._current_node)
-        self._model.nodeUpdated.emit(self._current_node)
-
-    def _on_remove_technology(self):
-        if self._current_node is None:
-            return
-        node = self._model.get_node(self._current_node)
-        if node is None:
-            return
-        row = self._tech_table.currentRow()
-        if 0 <= row < len(node.technologies):
-            node.technologies.pop(row)
-            self._populate_tech_table(node)
-            self._populate_tech_combo(self._current_node)
-            self._model.nodeUpdated.emit(self._current_node)
-
-    def _on_tech_table_changed(self, *_args):
-        if self._updating or self._current_node is None:
-            return
-        node = self._model.get_node(self._current_node)
-        if node is None:
-            return
-        node.technologies.clear()
-        for row in range(self._tech_table.rowCount()):
-            name_item = self._tech_table.item(row, 0)
-            cat_widget = self._tech_table.cellWidget(row, 1)
-            existing_item = self._tech_table.item(row, 2)
-            cost_item = self._tech_table.item(row, 3)
-            max_item = self._tech_table.item(row, 4)
-            tech = NodeTechnology(
-                name=name_item.text() if name_item else "",
-                category=cat_widget.currentText() if cat_widget else "generation",
-                existing_capacity=float(existing_item.text() or 0) if existing_item else 0,
-                invest_cost=float(cost_item.text() or 0) if cost_item else 0,
-                invest_max=float(max_item.text() or 0) if max_item else 0,
-            )
-            node.technologies.append(tech)
-        self._model.nodeUpdated.emit(self._current_node)
-
-    # ==============================================================
     # Centroid pick-on-map
     # ==============================================================
 
@@ -890,9 +717,6 @@ class NodeForm(QWidget):
 
         # Hide tabs that don't make sense for multi-edit
         self._tabs.setTabEnabled(1, False)  # Demand tab
-        # Clear tech table
-        self._tech_table.setRowCount(0)
-        self._tech_combo.clear()
 
         self._updating = False
 
@@ -924,9 +748,6 @@ class NodeForm(QWidget):
         self._losses.setValue(node.losses)
         self._invest_cost.setValue(node.transference_invest_cost)
         self._invest_max.setValue(node.transference_invest_max)
-
-        self._populate_tech_table(node)
-        self._populate_tech_combo(self._current_node)
 
         # Demand tab
         self._update_demand_display(node.demand)
