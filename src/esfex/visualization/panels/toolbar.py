@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QComboBox, QToolBar
+from PySide6.QtWidgets import QComboBox, QLabel, QToolBar
 from PySide6.QtGui import QPainter
 
 from esfex.visualization.i18n import tr
@@ -292,9 +292,9 @@ class EditorToolbar(QToolBar):
 
         self.addSeparator()
 
-        # Layer selector. The descriptive label is folded into the combo's
-        # tooltip (instead of a separate text label) to keep the toolbar
-        # compact enough to fit the default window width.
+        # Layer selector, preceded by a visible text label.
+        self._layer_label = QLabel(f"  {tr('toolbar.layer')} ")
+        self.addWidget(self._layer_label)
         self._layer_combo = QComboBox()
         self._layer_combo.setToolTip(tr("toolbar.layer"))
         self._layer_combo.addItems([
@@ -306,7 +306,9 @@ class EditorToolbar(QToolBar):
         self._layer_combo.currentTextChanged.connect(self._on_layer_changed)
         self.addWidget(self._layer_combo)
 
-        # Base map selector (label likewise folded into the tooltip)
+        # Base map selector, preceded by a visible text label.
+        self._basemap_label = QLabel(f"  {tr('toolbar.base_map')} ")
+        self.addWidget(self._basemap_label)
         self._basemap_combo = QComboBox()
         self._basemap_combo.setToolTip(tr("toolbar.base_map"))
         for key, label_key in self._basemap_items():
@@ -409,7 +411,9 @@ class EditorToolbar(QToolBar):
             action.setText(tr(text_key))
             action.setToolTip(tr(tip_key))
 
-        # Combo box descriptions live in the tooltips (compact toolbar).
+        # Visible labels + matching tooltips for the combos.
+        self._layer_label.setText(f"  {tr('toolbar.layer')} ")
+        self._basemap_label.setText(f"  {tr('toolbar.base_map')} ")
         self._layer_combo.setToolTip(tr("toolbar.layer"))
         self._basemap_combo.setToolTip(tr("toolbar.base_map"))
 
