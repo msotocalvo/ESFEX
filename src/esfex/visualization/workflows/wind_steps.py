@@ -570,8 +570,10 @@ class WindConfigStep(QWidget):
         # Update hub height to turbine default
         self._spin_hub_height.setValue(int(t.hub_height_m))
 
-        # Build details text
-        sp = t.specific_power
+        # Build details text. windrex's TurbineSpec carries no specific_power
+        # property, so derive it (W/m² of rotor area) from the rated power.
+        _area = math.pi * (t.rotor_diameter_m / 2) ** 2
+        sp = (t.rated_power_mw * 1e6) / _area if _area > 0 else 0.0
         lines = [
             f"<b>{t.manufacturer} {t.name}</b>",
             f"Rated power: <b>{t.rated_power_mw:.2f} MW</b>",
