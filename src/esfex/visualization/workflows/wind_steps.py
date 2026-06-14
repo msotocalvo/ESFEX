@@ -36,9 +36,15 @@ from windrex import (
     DEFAULT_LULC_SCORES,
     MCDAConfig,
     TurbineSpec,
-    WindConfig,
     load_turbine_database,
 )
+
+# esfex's own fat wind config (turbine as a key string, hub_height, installation,
+# effective_workers, …) — matches what esfex's analyzer/wizard read. windrex's
+# WindConfig is a different, slimmer dataclass (turbine as a TurbineSpec) used by
+# windrex's own analyzer, which esfex does not use; importing it here passed
+# kwargs it no longer accepts and broke get_config().
+from esfex.visualization.workflows.wind_analysis import WindConfig
 
 from esfex.visualization.i18n import tr
 
