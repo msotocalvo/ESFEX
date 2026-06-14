@@ -428,6 +428,40 @@ import Ipopt
             @test size(res.gen_output) == (1, 1, H)
         end
 
+        @testset "custom constraints (linear cap binds)" begin
+            H = 2
+            gen = mkgen("GasCC", "Non-renewable", "Gas", [100.0],
+                        [3.0e-5], ones(H, 1); nb = 1, H = H)
+            bus = BusData(1, 1, 220.0, 50.0, "AC", "slack", "mixed", 1.0)
+            net = NetworkConfig(1, 1, [bus], [1], zeros(1, 1), zeros(1, 1),
+                                100.0, 0.4, 220.0, 0.5, 1, [0.0], [0.0],
+                                TransmissionLineData[], TransformerData[],
+                                ACDCConverterData[], FrequencyConverterData[], 0.1)
+            mkinput() = PowerSystemInput(
+                name = "cc", year = 2025, network = net, generators = [gen],
+                batteries = BatteryConfig[], demand = reshape([50.0, 60.0], H, 1),
+                temporal = TemporalConfig(H, 1, H, 0, H, H, 1, 1, 1),
+                mode = "economic_dispatch", solver_name = "highs", verbose = false)
+
+            # A linear cap on total generator output forces 30 MWh of shedding.
+            cc = [Dict("name" => "cap_gen", "type" => "linear", "sense" => "<=",
+                       "rhs" => 80.0,
+                       "terms" => [Dict("variable" => "gen_output",
+                                        "index" => [1, -1], "coefficient" => 1.0)])]
+            inp = mkinput()
+            model, vars = create_power_system(inp; custom_constraints = cc)
+            optimize!(model)
+            @test string(termination_status(model)) == "OPTIMAL"
+            res = extract_solution(model, vars, inp)
+            @test res.total_generation ≈ 80.0 atol = 1e-4
+            @test res.load_shed_total ≈ 30.0 atol = 1e-4
+
+            # Unknown constraint type errors clearly.
+            @test_throws ErrorException create_power_system(
+                mkinput();
+                custom_constraints = [Dict("name" => "x", "type" => "bogus")])
+        end
+
         @testset "reservoir minimum release binds" begin
             # A single reservoir-hydro unit on a flat, low demand. Without a
             # minimum release it simply turbines to meet load (no spill). A

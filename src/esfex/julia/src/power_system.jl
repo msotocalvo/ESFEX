@@ -74,7 +74,7 @@ Returns a tuple (model, vars) where:
 - model: JuMP Model ready for optimization
 - vars: PowerSystemVariables containing all decision variables
 """
-function create_power_system(input::PowerSystemInput)
+function create_power_system(input::PowerSystemInput; custom_constraints=nothing)
 
     t_total = time()
     t0 = time()
@@ -260,6 +260,10 @@ function create_power_system(input::PowerSystemInput)
         add_n1_security_constraints!(model, vars, input)
     end
     t_n1 = time() - t0
+
+    # User-defined constraints (declarative config + plugin overlays). Additive,
+    # applied after all base constraints; no-op when none are supplied.
+    apply_user_constraints!(model, vars, input, custom_constraints)
 
     t_build_total = time() - t_total
 

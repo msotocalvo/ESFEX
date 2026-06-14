@@ -89,6 +89,10 @@ end
 # Include type definitions first (depends on JuMP and MOI imports above)
 include("types.jl")
 
+# User-defined constraint registry + built-in declarative hook (additive;
+# applied at the end of a model build). Must precede the builders that call it.
+include("user_constraints.jl")
+
 # Include model components
 include("transmission_dc.jl")
 include("transmission_ac.jl")

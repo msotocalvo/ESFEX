@@ -2734,7 +2734,8 @@ Create the Master Problem optimization model.
 """
 function create_master_problem(
     input::MasterProblemInput;
-    use_representative_days::Bool = true
+    use_representative_days::Bool = true,
+    custom_constraints = nothing
 )
     # Create model with optimizer
     model = Model(create_optimizer(
@@ -2776,6 +2777,9 @@ function create_master_problem(
 
     # Add RE increment constraints (min/max annual change in RE ratio)
     add_re_increment_constraints!(model, vars, input)
+
+    # User-defined investment constraints (declarative config + plugin overlays).
+    apply_user_constraints!(model, vars, input, custom_constraints)
 
     # Build objective (now includes operational costs from representative days)
     build_master_objective!(model, vars, input)
