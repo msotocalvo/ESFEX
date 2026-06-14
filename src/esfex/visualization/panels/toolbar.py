@@ -5,7 +5,13 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QComboBox, QLabel, QToolBar
+from PySide6.QtWidgets import (
+    QComboBox,
+    QLabel,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+)
 from PySide6.QtGui import QPainter
 
 from esfex.visualization.i18n import tr
@@ -292,9 +298,8 @@ class EditorToolbar(QToolBar):
 
         self.addSeparator()
 
-        # Layer selector, preceded by a visible text label.
-        self._layer_label = QLabel(f"  {tr('toolbar.layer')} ")
-        self.addWidget(self._layer_label)
+        # Layer selector with its caption above the combo.
+        self._layer_label = QLabel(tr("toolbar.layer"))
         self._layer_combo = QComboBox()
         self._layer_combo.setToolTip(tr("toolbar.layer"))
         self._layer_combo.addItems([
@@ -304,17 +309,16 @@ class EditorToolbar(QToolBar):
             tr("layers.results"),
         ])
         self._layer_combo.currentTextChanged.connect(self._on_layer_changed)
-        self.addWidget(self._layer_combo)
+        self.addWidget(self._captioned(self._layer_label, self._layer_combo))
 
-        # Base map selector, preceded by a visible text label.
-        self._basemap_label = QLabel(f"  {tr('toolbar.base_map')} ")
-        self.addWidget(self._basemap_label)
+        # Base map selector with its caption above the combo.
+        self._basemap_label = QLabel(tr("toolbar.base_map"))
         self._basemap_combo = QComboBox()
         self._basemap_combo.setToolTip(tr("toolbar.base_map"))
         for key, label_key in self._basemap_items():
             self._basemap_combo.addItem(tr(label_key), key)
         self._basemap_combo.currentIndexChanged.connect(self._on_basemap_changed)
-        self.addWidget(self._basemap_combo)
+        self.addWidget(self._captioned(self._basemap_label, self._basemap_combo))
 
         # Add analysis actions to icon registry
         self._icon_actions.extend([
@@ -324,6 +328,18 @@ class EditorToolbar(QToolBar):
             (self._act_results, "results.png"),
             (self._act_risk, "risk.png"),
         ])
+
+    @staticmethod
+    def _captioned(label: QLabel, combo: QComboBox) -> QWidget:
+        """Stack a caption label above its combo in a compact container."""
+        label.setStyleSheet("font-size: 9px; padding: 0; margin: 0;")
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(4, 0, 4, 0)
+        v.setSpacing(0)
+        v.addWidget(label)
+        v.addWidget(combo)
+        return w
 
     def _apply_icon_scale(self, icon: int) -> None:
         """Set the icon size and tie the button/combo font + overflow button to
@@ -411,9 +427,9 @@ class EditorToolbar(QToolBar):
             action.setText(tr(text_key))
             action.setToolTip(tr(tip_key))
 
-        # Visible labels + matching tooltips for the combos.
-        self._layer_label.setText(f"  {tr('toolbar.layer')} ")
-        self._basemap_label.setText(f"  {tr('toolbar.base_map')} ")
+        # Captions above the combos + matching tooltips.
+        self._layer_label.setText(tr("toolbar.layer"))
+        self._basemap_label.setText(tr("toolbar.base_map"))
         self._layer_combo.setToolTip(tr("toolbar.layer"))
         self._basemap_combo.setToolTip(tr("toolbar.base_map"))
 
