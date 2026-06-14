@@ -331,11 +331,18 @@ class EditorToolbar(QToolBar):
 
     @staticmethod
     def _captioned(label: QLabel, combo: QComboBox) -> QWidget:
-        """Stack a caption label above its combo in a compact container."""
-        label.setStyleSheet("font-size: 9px; padding: 0; margin: 0;")
+        """Stack a caption label above its combo in a compact container.
+
+        Kept as tight as possible (no margins, capped combo width) so the two
+        selectors add minimal width to an already crowded toolbar.
+        """
+        from PySide6.QtWidgets import QSizePolicy
+        label.setStyleSheet("font-size: 8px; padding: 0; margin: 0;")
+        combo.setMaximumWidth(108)
         w = QWidget()
+        w.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         v = QVBoxLayout(w)
-        v.setContentsMargins(4, 0, 4, 0)
+        v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
         v.addWidget(label)
         v.addWidget(combo)
