@@ -1379,6 +1379,11 @@
     "info": "Info",
     "enable": "Enable"
   },
+  "geo_domain": {
+    "group": "Use imported area as domain",
+    "apply": "Apply as domain",
+    "no_polygon": "The selected geo asset has no polygon to use as a domain."
+  },
   "messages": {
     "export_project_title": "Project Exported",
     "export_project_done": "Exported {n} data file(s) to:\n{path}",

@@ -70,8 +70,10 @@ _PHASE_A_COUNT = len(_PHASE_A_NAMES)
 class WindWizard(QDialog):
     """Multi-step wizard for wind resource assessment with MCDA and advanced analysis."""
 
-    def __init__(self, map_widget, model=None, parent=None):
+    def __init__(self, map_widget, model=None, parent=None,
+                 geo_assets_provider=None):
         super().__init__(parent)
+        self._geo_assets_provider = geo_assets_provider
         self.setWindowTitle(tr("wizard_wind.title"))
         self.setMinimumSize(750, 580)
         self.resize(950, 700)
@@ -161,7 +163,8 @@ class WindWizard(QDialog):
         self._stack = QStackedWidget()
 
         # Phase A steps
-        self._step_domain = WindDomainStep(self._map_widget)
+        self._step_domain = WindDomainStep(
+            self._map_widget, geo_assets_provider=self._geo_assets_provider)
         self._step_config = WindConfigStep()
         self._step_criteria = CriteriaConfigStep()
         self._step_analysis = WindAnalysisStep()
@@ -237,6 +240,7 @@ class WindWizard(QDialog):
                 self._step_config.get_config(),
                 self._step_criteria.get_config(),
                 transmission_lines,
+                polygon=self._step_domain.get_polygon(),
             )
         elif self._current_step == 3:
             # Analysis → Results: pass summary + config

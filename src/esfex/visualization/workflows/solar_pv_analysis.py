@@ -271,12 +271,16 @@ class SolarPVAnalyzer(QThread):
         mcda_config: MCDAConfig,
         transmission_lines: list | None = None,
         parent=None,
+        polygon: list | None = None,
     ):
         super().__init__(parent)
         self.south, self.west, self.north, self.east = bounds
         self.solar_config = solar_config
         self.mcda_config = mcda_config
         self.transmission_lines = transmission_lines or []
+        # Optional precise domain: the bbox drives the fetch, the polygon
+        # (from a drawn boundary or imported GeoAsset) clips the eval grid.
+        self._polygon = polygon or []
         self._cancelled = False
 
     def cancel(self):
@@ -310,10 +314,18 @@ class SolarPVAnalyzer(QThread):
         if self._cancelled:
             return self._empty_summary()
 
-        # Build evaluation grid
+        # Build evaluation grid. When a precise domain polygon is set, drop
+        # grid cells outside it so results match the exact boundary, not the
+        # bounding box.
+        from esfex.visualization.workflows.grid_mapping_fetchers import (
+            _point_in_polygon,
+        )
         grid_points: list[dict] = []
         for i, lat in enumerate(cf_lats):
             for j, lon in enumerate(cf_lons):
+                if self._polygon and not _point_in_polygon(
+                        float(lat), float(lon), self._polygon):
+                    continue
                 cf_val = float(mean_cf[i, j])
                 ghi_val = float(ghi_annual[i, j]) if ghi_annual is not None else 0.0
                 if not np.isnan(cf_val):

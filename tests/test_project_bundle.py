@@ -170,6 +170,46 @@ def test_export_import_end_to_end(tmp_path):
     assert (out / reloaded.systems["S"].demand_paths[0]).is_file()
 
 
+def test_export_carries_geo_assets(tmp_path):
+    """A domain-defining GeoAsset is embedded (inline GeoJSON) in the bundle's
+    config so the project is self-contained — no separate files."""
+    import types
+
+    import yaml
+
+    from esfex.config.schema import (
+        ESFEXConfig,
+        MetaNetworkConfig,
+        NodeConfig,
+        SystemConfig,
+    )
+    from esfex.visualization.data.serializer import config_to_gui_states
+
+    nodes = NodeConfig(num_nodes=1, nodes_connections=[0.0])
+    sys = SystemConfig(name="S", nodes=nodes)
+    cfg = ESFEXConfig(meta_network=MetaNetworkConfig(systems=["S"]),
+                      systems={"S": sys})
+    states = config_to_gui_states(cfg)
+    geo = {"geo_0": types.SimpleNamespace(
+        name="Region",
+        geojson_data={"type": "Feature", "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[-84, 19], [-74, 19], [-74, 24], [-84, 24], [-84, 19]]]}},
+        is_domain=True)}
+
+    dest = tmp_path / "p.esfexp"
+    PB.export_project(states, cfg, dest, geo_assets=geo)
+    out = tmp_path / "imported"
+    cfg_path = PB.import_project(dest, out)
+    d = yaml.safe_load(open(cfg_path))
+    assert "_geo_assets" in d
+    assert d["_geo_assets"]["geo_0"]["name"] == "Region"
+    assert d["_geo_assets"]["geo_0"]["is_domain"] is True
+    assert d["_geo_assets"]["geo_0"]["geojson"]["geometry"]["type"] == "Polygon"
+    # No separate geo_assets/ directory — fully inline.
+    assert not (out / "geo_assets").exists()
+
+
 def test_load_demand_csv_resolves_under_base_dir(tmp_path):
     from esfex.visualization.data.gui_model import GuiNode
     from esfex.visualization.data.serializer import _load_demand_csv

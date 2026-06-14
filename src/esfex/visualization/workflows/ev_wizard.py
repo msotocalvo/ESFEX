@@ -50,10 +50,11 @@ _COLOR_PENDING = "#555"
 class EVWizardDialog(QDialog):
     """Main wizard dialog for EV & V2G Assessment."""
 
-    def __init__(self, map_widget, model=None, parent=None):
+    def __init__(self, map_widget, model=None, parent=None, geo_assets_provider=None):
         super().__init__(parent)
         self._map_widget = map_widget
         self._model = model
+        self._geo_assets_provider = geo_assets_provider
         self._current_step = 0
         self._total_steps = len(_PHASE_A_STEPS) + len(_PHASE_B_STEPS)
 
@@ -149,7 +150,10 @@ class EVWizardDialog(QDialog):
         )
 
         # Phase A
-        self._step_domain = EVDomainStep(self._map_widget, parent=self)
+        self._step_domain = EVDomainStep(
+            self._map_widget, parent=self,
+            geo_assets_provider=self._geo_assets_provider,
+        )
         self._step_macro = EVMacroDataStep(parent=self)
         self._step_adoption = EVAdoptionModelStep(parent=self)
         self._step_results = EVFleetResultsStep(parent=self)

@@ -1391,6 +1391,11 @@
     "info": "情報",
     "enable": "有効化"
   },
+  "geo_domain": {
+    "group": "インポートした領域をドメインとして使用",
+    "apply": "ドメインとして適用",
+    "no_polygon": "選択したジオアセットにはドメインとして使用できるポリゴンがありません。"
+  },
   "messages": {
     "export_project_title": "プロジェクトをエクスポートしました",
     "export_project_done": "{n}個のデータファイルをエクスポートしました:\n{path}",

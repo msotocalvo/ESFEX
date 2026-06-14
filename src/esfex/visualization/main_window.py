@@ -95,6 +95,7 @@ class _GeoAssetInfo:
     geojson_data: dict
     file_path: str
     target_system: str = ""
+    is_domain: bool = False   # applied as a workflow domain
 
 
 def _read_geo_file(path: str) -> tuple[str, dict]:
@@ -2502,6 +2503,7 @@ class MainWindow(QMainWindow):
         )
         self._open_wizard("_solar_wizard", lambda: SolarRooftopWizard(
             map_widget=self.map_widget, model=self.model, parent=self,
+            geo_assets_provider=lambda: self._geo_assets,
         ))
 
     def _on_otec_studio(self):
@@ -2518,6 +2520,7 @@ class MainWindow(QMainWindow):
         from esfex.visualization.workflows.wind_wizard import WindWizard
         self._open_wizard("_wind_wizard", lambda: WindWizard(
             map_widget=self.map_widget, model=self.model, parent=self,
+            geo_assets_provider=lambda: self._geo_assets,
         ))
 
     def _on_solar_pv_workflow(self):
@@ -2527,6 +2530,7 @@ class MainWindow(QMainWindow):
         )
         self._open_wizard("_solar_pv_wizard", lambda: SolarPVWizard(
             map_widget=self.map_widget, model=self.model, parent=self,
+            geo_assets_provider=lambda: self._geo_assets,
         ))
 
     def _on_grid_mapping_workflow(self):
@@ -2541,6 +2545,7 @@ class MainWindow(QMainWindow):
             switch_system_fn=self._switch_to_system,
             create_system_fn=self._create_system_for_wizard,
             parent=self,
+            geo_assets_provider=lambda: self._geo_assets,
         ))
 
     def _on_ev_v2g_workflow(self):
@@ -2548,6 +2553,7 @@ class MainWindow(QMainWindow):
         from esfex.visualization.workflows.ev_wizard import EVWizardDialog
         self._open_wizard("_ev_wizard", lambda: EVWizardDialog(
             map_widget=self.map_widget, model=self.model, parent=self,
+            geo_assets_provider=lambda: self._geo_assets,
         ))
 
     def _on_financial_workflow(self):
@@ -2874,6 +2880,7 @@ class MainWindow(QMainWindow):
                 inter_system_links=self.model.inter_system_links,
                 global_settings=self.model.global_settings,
                 stochastic_scenarios=self.model.stochastic_scenarios,
+                geo_assets=self._geo_assets,
             )
             if not is_cache:
                 # Wrote to the canonical config path — clean state.
@@ -3036,6 +3043,7 @@ class MainWindow(QMainWindow):
                 created_at=_dt.datetime.now().isoformat(timespec="seconds"),
                 project_name=Path(path).stem,
                 src_base=src_base,
+                geo_assets=self._geo_assets,
             )
         except Exception as e:
             progress.close()
@@ -6812,6 +6820,48 @@ class MainWindow(QMainWindow):
             )
 
         self._update_map_actions_state()
+        self._restore_geo_assets(raw_dict)
+
+    def _restore_geo_assets(self, raw_dict):
+        """Rebuild imported geo assets from a saved top-level ``_geo_assets``
+        YAML section (inline GeoJSON → map overlay + element-tree entry)."""
+        import json as _json
+        import logging
+
+        # Clear current overlays (mirror the new-project teardown).
+        for asset_id in list(self._geo_assets.keys()):
+            try:
+                self.map_widget.remove_geo_asset(asset_id)
+                self.element_tree.remove_geo_asset(asset_id)
+            except Exception:
+                pass
+        self._geo_assets.clear()
+
+        entries = (raw_dict or {}).get("_geo_assets") or {}
+        colors = ["#e67e22", "#9b59b6", "#1abc9c", "#e74c3c",
+                  "#3498db", "#2ecc71", "#f39c12", "#34495e"]
+        for asset_id, entry in entries.items():
+            if not isinstance(entry, dict):
+                continue
+            gj = entry.get("geojson") or {}
+            name = entry.get("name") or asset_id
+            self._geo_assets[asset_id] = _GeoAssetInfo(
+                name=name, geojson_data=gj, file_path="",
+                is_domain=bool(entry.get("is_domain", False)))
+            try:
+                idx = int(str(asset_id).split("_")[-1])
+            except ValueError:
+                idx = len(self._geo_assets)
+            color = colors[idx % len(colors)]
+            try:
+                self.map_widget.add_geo_asset(
+                    asset_id, _json.dumps(gj), name, color)
+                self.element_tree.add_geo_asset(asset_id, name, name)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Failed to restore geo asset %s", asset_id)
+            self._next_geo_asset_id = max(
+                getattr(self, "_next_geo_asset_id", 0), idx + 1)
 
     def _auto_validate_states(self, states_dict: dict) -> tuple[list, list]:
         """Run validate_state across all systems; return (errors, warnings).
@@ -7034,6 +7084,7 @@ class MainWindow(QMainWindow):
                     inter_system_links=self.model.inter_system_links,
                     global_settings=self.model.global_settings,
                     stochastic_scenarios=self.model.stochastic_scenarios,
+                    geo_assets=self._geo_assets,
                 )
             finally:
                 progress.close()

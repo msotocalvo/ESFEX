@@ -61,9 +61,10 @@ class GridMappingSourceFetchStep(QWidget):
 
     fetchFinished = Signal()  # all fetchers done
 
-    def __init__(self, map_widget=None, parent=None):
+    def __init__(self, map_widget=None, parent=None, geo_assets_provider=None):
         super().__init__(parent)
         self._map_widget = map_widget
+        self._geo_assets_provider = geo_assets_provider
         self._features: list = []
         self._fetchers: list = []
         self._pending: int = 0
@@ -109,6 +110,14 @@ class GridMappingSourceFetchStep(QWidget):
         self._area_label = QLabel("")
         self._area_label.setStyleSheet("font-weight: bold;")
         region_lay.addWidget(self._area_label)
+
+        # Use an imported GeoAsset polygon as the domain instead of drawing.
+        from esfex.visualization.workflows._domain_geoasset_control import (
+            GeoAssetDomainControl,
+        )
+        self._geo_domain_ctl = GeoAssetDomainControl(self._geo_assets_provider)
+        self._geo_domain_ctl.domainPicked.connect(self._apply_domain_polygon)
+        region_lay.addWidget(self._geo_domain_ctl)
 
         layout.addWidget(region_group)
 
@@ -379,15 +388,24 @@ class GridMappingSourceFetchStep(QWidget):
         def _norm_lng(x: float) -> float:
             return ((float(x) + 180.0) % 360.0) - 180.0
 
-        self._polygon = [
+        poly = [
             (max(-90.0, min(90.0, float(c[1]))), _norm_lng(c[0]))
             for c in ring
         ]
+        self._apply_domain_polygon(poly)
 
-        lats = [p[0] for p in self._polygon]
-        lngs = [p[1] for p in self._polygon]
-        self._bounds = (min(lats), min(lngs), max(lats), max(lngs))
+        wizard = self.window()
+        if wizard:
+            wizard.showNormal()
 
+    def _apply_domain_polygon(self, poly: list[tuple[float, float]]):
+        """Set the study domain from a polygon — drawn on the map OR dissolved
+        from an imported GeoAsset. (Imported assets are already valid WGS84, so
+        unlike the drawn path they are NOT longitude-normalized.)"""
+        from esfex.visualization.workflows.geo_domain import domain_bounds
+
+        self._polygon = list(poly)
+        self._bounds = domain_bounds(self._polygon)
         n_verts = len(self._polygon)
         s, w, n, e = self._bounds
         self._draw_status.setText(
@@ -401,10 +419,6 @@ class GridMappingSourceFetchStep(QWidget):
         if self._map_widget:
             self._map_widget.show_domain_polygon(self._polygon)
             self._map_widget.disable_domain_polygon_draw()
-
-        wizard = self.window()
-        if wizard:
-            wizard.showNormal()
             wizard.raise_()
             wizard.activateWindow()
 

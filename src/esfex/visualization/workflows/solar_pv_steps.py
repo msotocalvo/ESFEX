@@ -66,10 +66,12 @@ class SolarPVDomainStep(QWidget):
 
     domainChanged = Signal()
 
-    def __init__(self, map_widget, parent=None):
+    def __init__(self, map_widget, parent=None, geo_assets_provider=None):
         super().__init__(parent)
         self._map_widget = map_widget
+        self._geo_assets_provider = geo_assets_provider
         self._bounds: Optional[tuple[float, float, float, float]] = None
+        self._polygon: list[tuple[float, float]] = []
 
         layout = QVBoxLayout(self)
 
@@ -88,6 +90,14 @@ class SolarPVDomainStep(QWidget):
         self._draw_status = QLabel("")
         draw_lay.addWidget(self._draw_status)
         layout.addWidget(draw_group)
+
+        # Use an imported GeoAsset polygon as the domain (precise, no bbox).
+        from esfex.visualization.workflows._domain_geoasset_control import (
+            GeoAssetDomainControl,
+        )
+        self._geo_domain_ctl = GeoAssetDomainControl(self._geo_assets_provider)
+        self._geo_domain_ctl.domainPicked.connect(self._apply_domain_polygon)
+        layout.addWidget(self._geo_domain_ctl)
 
         # Manual coordinates
         manual_group = QGroupBox(tr("wizard_common.manual_coords"))
@@ -151,6 +161,7 @@ class SolarPVDomainStep(QWidget):
         north = float(data["north"])
         east = float(data["east"])
         self._bounds = (south, west, north, east)
+        self._polygon = []   # a drawn rectangle is bbox-only (no polygon clip)
         self._spin_south.setValue(south)
         self._spin_north.setValue(north)
         self._spin_west.setValue(west)
@@ -183,6 +194,7 @@ class SolarPVDomainStep(QWidget):
             )
             return
         self._bounds = (s, w, n, e)
+        self._polygon = []   # manual bbox (no polygon clip)
         self._btn_show.setEnabled(True)
         self._update_area()
         self.domainChanged.emit()
@@ -202,8 +214,33 @@ class SolarPVDomainStep(QWidget):
         area = lat_km * lon_km
         self._area_label.setText(f"Approximate area: {area:.2f} km\u00b2")
 
+    def _apply_domain_polygon(self, poly):
+        """Set the domain from an imported GeoAsset polygon: the bbox drives the
+        coarse fetch, the polygon trims results to the exact boundary."""
+        from esfex.visualization.workflows.geo_domain import domain_bounds
+
+        self._polygon = list(poly)
+        s, w, n, e = domain_bounds(self._polygon)
+        self._bounds = (s, w, n, e)
+        self._spin_south.setValue(s)
+        self._spin_north.setValue(n)
+        self._spin_west.setValue(w)
+        self._spin_east.setValue(e)
+        self._draw_status.setText(
+            f"Domain polygon: {len(self._polygon)} vertices")
+        self._btn_show.setEnabled(True)
+        self._update_area()
+        try:
+            self._map_widget.show_domain_polygon(self._polygon)
+        except Exception:
+            self._show_on_map()
+        self.domainChanged.emit()
+
     def get_bounds(self) -> tuple[float, float, float, float]:
         return self._bounds  # type: ignore[return-value]
+
+    def get_polygon(self) -> list[tuple[float, float]]:
+        return self._polygon
 
     def is_valid(self) -> bool:
         if self._bounds is None:
@@ -915,11 +952,13 @@ class SolarPVAnalysisStep(QWidget):
         solar_config: SolarPVConfig,
         mcda_config: MCDAConfig,
         transmission_lines: list | None = None,
+        polygon: list | None = None,
     ):
         self._bounds = bounds
         self._solar_config = solar_config
         self._mcda_config = mcda_config
         self._transmission_lines = transmission_lines or []
+        self._polygon = polygon or []
 
         s, w, n, e = bounds
         enabled_criteria = [
@@ -988,6 +1027,7 @@ class SolarPVAnalysisStep(QWidget):
             self._solar_config,
             self._mcda_config,
             self._transmission_lines,
+            polygon=getattr(self, "_polygon", None),
         )
         self._analyzer.progress.connect(self._on_progress)
         self._analyzer.finished.connect(self._on_finished)

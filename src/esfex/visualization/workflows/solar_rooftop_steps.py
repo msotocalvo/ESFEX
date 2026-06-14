@@ -45,10 +45,12 @@ class DomainStep(QWidget):
 
     domainChanged = Signal()  # emitted when bounds are set/updated
 
-    def __init__(self, map_widget, parent=None):
+    def __init__(self, map_widget, parent=None, geo_assets_provider=None):
         super().__init__(parent)
         self._map_widget = map_widget
+        self._geo_assets_provider = geo_assets_provider
         self._bounds: Optional[tuple[float, float, float, float]] = None
+        self._polygon: list[tuple[float, float]] = []
 
         layout = QVBoxLayout(self)
 
@@ -64,6 +66,13 @@ class DomainStep(QWidget):
         self._draw_status = QLabel("")
         draw_lay.addWidget(self._draw_status)
         layout.addWidget(draw_group)
+
+        from esfex.visualization.workflows._domain_geoasset_control import (
+            GeoAssetDomainControl,
+        )
+        self._geo_domain_ctl = GeoAssetDomainControl(self._geo_assets_provider)
+        self._geo_domain_ctl.domainPicked.connect(self._apply_domain_polygon)
+        layout.addWidget(self._geo_domain_ctl)
 
         # Manual coordinates
         manual_group = QGroupBox(tr("wizard_common.manual_coords"))
@@ -128,6 +137,7 @@ class DomainStep(QWidget):
         north = float(data["north"])
         east = float(data["east"])
         self._bounds = (south, west, north, east)
+        self._polygon = []   # drawn rectangle is bbox-only
         self._spin_south.setValue(south)
         self._spin_north.setValue(north)
         self._spin_west.setValue(west)
@@ -160,8 +170,30 @@ class DomainStep(QWidget):
                                 tr("wizard_solar.invalid_domain_msg"))
             return
         self._bounds = (s, w, n, e)
+        self._polygon = []   # manual bbox
         self._btn_show.setEnabled(True)
         self._update_area()
+        self.domainChanged.emit()
+
+    def _apply_domain_polygon(self, poly):
+        """Domain from an imported GeoAsset polygon (bbox fetch + polygon clip)."""
+        from esfex.visualization.workflows.geo_domain import domain_bounds
+
+        self._polygon = list(poly)
+        s, w, n, e = domain_bounds(self._polygon)
+        self._bounds = (s, w, n, e)
+        self._spin_south.setValue(s)
+        self._spin_north.setValue(n)
+        self._spin_west.setValue(w)
+        self._spin_east.setValue(e)
+        self._draw_status.setText(
+            f"Domain polygon: {len(self._polygon)} vertices")
+        self._btn_show.setEnabled(True)
+        self._update_area()
+        try:
+            self._map_widget.show_domain_polygon(self._polygon)
+        except Exception:
+            self._show_on_map()
         self.domainChanged.emit()
 
     def _show_on_map(self):
@@ -183,6 +215,9 @@ class DomainStep(QWidget):
 
     def get_bounds(self) -> Optional[tuple[float, float, float, float]]:
         return self._bounds
+
+    def get_polygon(self) -> list[tuple[float, float]]:
+        return self._polygon
 
     def is_valid(self) -> bool:
         return self._bounds is not None
@@ -294,6 +329,10 @@ class DataSourcesStep(QWidget):
         """Store bounds for data fetching."""
         self._bounds = bounds
 
+    def set_polygon(self, polygon):
+        """Optional precise domain polygon; clips fetched buildings to it."""
+        self._polygon = polygon or []
+
     def _fetch_buildings(self):
         if not hasattr(self, "_bounds") or self._bounds is None:
             QMessageBox.warning(self, tr("wizard_common.no_domain_title"), tr("wizard_common.no_domain_msg"))
@@ -317,6 +356,17 @@ class DataSourcesStep(QWidget):
         self._bldg_status.setText(msg)
 
     def _on_bldg_finished(self, gdf):
+        # Clip to the precise domain polygon (drawn or imported GeoAsset) so
+        # buildings outside the boundary — only inside the bbox — are dropped.
+        poly = getattr(self, "_polygon", None)
+        if poly and len(poly) >= 3 and gdf is not None and len(gdf) > 0:
+            try:
+                from esfex.visualization.workflows.geo_domain import (
+                    domain_shapely,
+                )
+                gdf = gdf[gdf.geometry.intersects(domain_shapely(poly))]
+            except Exception:
+                pass
         self._buildings_gdf = gdf
         self._btn_fetch_bldg.setEnabled(True)
         n = len(gdf) if gdf is not None else 0

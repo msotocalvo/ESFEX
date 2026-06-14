@@ -144,6 +144,7 @@ def export_project(
     created_at: str = "",
     project_name: str = "",
     src_base=None,
+    geo_assets=None,
 ) -> ExportReport:
     """Export the current GUI state + all referenced files to a ``.esfexp``.
 
@@ -165,6 +166,7 @@ def export_project(
             inter_system_links=inter_system_links,
             global_settings=global_settings,
             stochastic_scenarios=stochastic_scenarios,
+            geo_assets=geo_assets,
         )
         with open(cfg_yaml, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}

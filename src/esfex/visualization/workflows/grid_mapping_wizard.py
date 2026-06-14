@@ -47,6 +47,7 @@ class GridMappingWizard(QDialog):
         switch_system_fn=None,
         create_system_fn=None,
         parent=None,
+        geo_assets_provider=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Grid Builder")
@@ -65,6 +66,7 @@ class GridMappingWizard(QDialog):
         self._all_states = all_states if all_states is not None else {}
         self._switch_system_fn = switch_system_fn
         self._create_system_fn = create_system_fn
+        self._geo_assets_provider = geo_assets_provider
         self._current_step = 0
         self._fetch_done = False
 
@@ -102,6 +104,7 @@ class GridMappingWizard(QDialog):
 
         self._step_source_fetch = GridMappingSourceFetchStep(
             map_widget=self._map_widget,
+            geo_assets_provider=self._geo_assets_provider,
         )
         self._step_build = GridMappingBuildStep(
             self._model, self._all_states,

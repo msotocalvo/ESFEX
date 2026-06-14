@@ -70,8 +70,10 @@ _PHASE_A_COUNT = len(_PHASE_A_NAMES)
 class SolarRooftopWizard(QDialog):
     """Multi-step wizard for solar rooftop potential analysis and adoption modeling."""
 
-    def __init__(self, map_widget, model=None, parent=None):
+    def __init__(self, map_widget, model=None, parent=None,
+                 geo_assets_provider=None):
         super().__init__(parent)
+        self._geo_assets_provider = geo_assets_provider
         self.setWindowTitle(tr("wizard_solar.title"))
         self.setMinimumSize(750, 580)
         self.resize(950, 700)
@@ -162,7 +164,8 @@ class SolarRooftopWizard(QDialog):
         self._stack = QStackedWidget()
 
         # Phase A steps
-        self._step_domain = DomainStep(self._map_widget)
+        self._step_domain = DomainStep(
+            self._map_widget, geo_assets_provider=self._geo_assets_provider)
         self._step_data = DataSourcesStep()
         self._step_config = ConfigStep()
         self._step_analysis = AnalysisStep()
@@ -228,6 +231,7 @@ class SolarRooftopWizard(QDialog):
         if self._current_step == 0:
             # Domain → Data Sources: pass bounds
             self._step_data.set_bounds(self._step_domain.get_bounds())
+            self._step_data.set_polygon(self._step_domain.get_polygon())
         elif self._current_step == 1:
             # Data Sources → Config: nothing to pass
             pass

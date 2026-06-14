@@ -2289,8 +2289,13 @@ def gui_state_to_yaml(
     inter_system_links: list[GuiInterSystemLink] | None = None,
     global_settings: GuiGlobalSettings | None = None,
     stochastic_scenarios: list[GuiStochasticScenario] | None = None,
+    geo_assets: dict | None = None,
 ) -> None:
-    """Export GUI state to YAML, preserving non-GUI config fields."""
+    """Export GUI state to YAML, preserving non-GUI config fields.
+
+    ``geo_assets`` (a ``{asset_id: _GeoAssetInfo-like}`` mapping) is written as a
+    top-level GUI-only ``_geo_assets`` key with the GeoJSON inlined, so projects
+    stay self-contained (and ride along inside a ``.esfexp`` bundle)."""
     config_dict = base_config.model_dump(mode="python", by_alias=True)
 
     # Update meta_network.systems — use selected systems if available,
@@ -2361,6 +2366,16 @@ def gui_state_to_yaml(
     config_dict = _to_native(config_dict)
 
     output_path = Path(output_path)
+    if geo_assets:
+        config_dict["_geo_assets"] = {
+            aid: {
+                "name": getattr(info, "name", aid),
+                "geojson": getattr(info, "geojson_data", {}),
+                "is_domain": bool(getattr(info, "is_domain", False)),
+            }
+            for aid, info in geo_assets.items()
+        }
+
     with open(output_path, "w", encoding="utf-8") as f:
         yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
 

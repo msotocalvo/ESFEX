@@ -63,10 +63,15 @@ class EVDomainStep(QWidget):
 
     domainChanged = Signal()
 
-    def __init__(self, map_widget, parent=None):
+    def __init__(self, map_widget, parent=None, geo_assets_provider=None):
         super().__init__(parent)
         self._map_widget = map_widget
+        self._geo_assets_provider = geo_assets_provider
         self._bounds: Optional[tuple[float, float, float, float]] = None
+        # Imported-area outline kept as a visual reference only: the OSM
+        # charging-station / road-density aggregates are computed by evrex over
+        # the bounding box, so EV stays bbox-approximated (no point-level clip).
+        self._polygon: list[tuple[float, float]] = []
         self._fetchers: list = []
 
         layout = QVBoxLayout(self)
@@ -97,6 +102,14 @@ class EVDomainStep(QWidget):
         self._btn_apply.clicked.connect(self._apply_manual)
         dg_layout.addWidget(self._btn_apply)
         layout.addWidget(domain_grp)
+
+        # -- Imported GeoAsset as domain --
+        from esfex.visualization.workflows._domain_geoasset_control import (
+            GeoAssetDomainControl,
+        )
+        self._geo_domain_ctl = GeoAssetDomainControl(self._geo_assets_provider)
+        self._geo_domain_ctl.domainPicked.connect(self._apply_domain_polygon)
+        layout.addWidget(self._geo_domain_ctl)
 
         # -- Auto-detect group --
         detect_grp = QGroupBox(tr("wizard_ev.autodetect_title"))
@@ -177,6 +190,7 @@ class EVDomainStep(QWidget):
         self._spin_west.setValue(self._bounds[1])
         self._spin_north.setValue(self._bounds[2])
         self._spin_east.setValue(self._bounds[3])
+        self._polygon = []  # drawn rectangle is bbox-only
         self._btn_draw.setEnabled(True)
         self._map_widget.disable_rectangle_draw()
         wizard = self.window()
@@ -191,7 +205,32 @@ class EVDomainStep(QWidget):
             self._spin_south.value(), self._spin_west.value(),
             self._spin_north.value(), self._spin_east.value(),
         )
+        self._polygon = []  # manual bbox
         self.domainChanged.emit()
+
+    def _apply_domain_polygon(self, poly):
+        """Apply an imported GeoAsset polygon as the domain.
+
+        The polygon outline is shown for reference and its bounding box drives
+        the OSM fetch; EV aggregates (charging stations, road density) remain
+        bbox-based since evrex returns counts, not per-point geometries.
+        """
+        if not poly or len(poly) < 3:
+            return
+        from esfex.visualization.workflows.geo_domain import domain_bounds
+        self._polygon = list(poly)
+        s, w, n, e = domain_bounds(self._polygon)
+        self._bounds = (s, w, n, e)
+        self._spin_south.setValue(s)
+        self._spin_west.setValue(w)
+        self._spin_north.setValue(n)
+        self._spin_east.setValue(e)
+        if hasattr(self._map_widget, "show_domain_polygon"):
+            self._map_widget.show_domain_polygon(self._polygon)
+        self.domainChanged.emit()
+
+    def get_polygon(self) -> list[tuple[float, float]]:
+        return self._polygon
 
     def _fetch_osm_data(self):
         if self._bounds is None:

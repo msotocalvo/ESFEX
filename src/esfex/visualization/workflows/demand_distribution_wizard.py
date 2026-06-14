@@ -51,8 +51,10 @@ class DemandDistributionWizard(QDialog):
         current_system_name: str,
         map_widget,
         parent=None,
+        geo_assets_provider=None,
     ):
         super().__init__(parent)
+        self._geo_assets_provider = geo_assets_provider
         self.setWindowTitle(tr("wizard_demand.title"))
         self.setMinimumSize(800, 620)
         self.resize(950, 700)
@@ -101,7 +103,9 @@ class DemandDistributionWizard(QDialog):
         self._stack = QStackedWidget()
 
         self._step_target = TargetSelectionStep(self._all_states)
-        self._step_domain = DomainFetchStep(self._map_widget)
+        self._step_domain = DomainFetchStep(
+            self._map_widget, geo_assets_provider=self._geo_assets_provider
+        )
         self._step_classify = ClassificationStep()
         self._step_cluster = ClusteringStep(self._map_widget)
         self._step_review_apply = ReviewApplyStep(
