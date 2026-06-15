@@ -221,6 +221,25 @@ class _BusyOverlay(QWidget):
         c.move(x, y)
 
 
+def _grow_dialog_area(dialog, area_factor: float) -> None:
+    """Enlarge a dialog's area by ``area_factor`` (e.g. 1.2 → +20%).
+
+    Each linear dimension is scaled by ``sqrt(area_factor)`` so the *area* grows
+    by the requested factor. Computed from the dialog's own ``sizeHint`` so it
+    adapts to translated label lengths. ``QInputDialog`` honours a wider width
+    via ``resize`` but pins its height unless a minimum is set, so we set both.
+    """
+    import math
+
+    dialog.adjustSize()
+    hint = dialog.sizeHint()
+    scale = math.sqrt(max(area_factor, 1.0))
+    w = int(round(hint.width() * scale))
+    h = int(round(hint.height() * scale))
+    dialog.resize(w, h)
+    dialog.setMinimumSize(w, h)
+
+
 class MainWindow(QMainWindow):
     """Three-pane editor: element tree | map | properties."""
 
@@ -2174,8 +2193,16 @@ class MainWindow(QMainWindow):
         """Show dialog to create a new empty system."""
         from PySide6.QtWidgets import QInputDialog
 
-        name, ok = QInputDialog.getText(self, tr("messages.new_system_title"), tr("messages.new_system_prompt"))
-        if not ok or not name.strip():
+        # Use an explicit dialog (not the static getText) so we can enlarge it.
+        dialog = QInputDialog(self)
+        dialog.setInputMode(QInputDialog.TextInput)
+        dialog.setWindowTitle(tr("messages.new_system_title"))
+        dialog.setLabelText(tr("messages.new_system_prompt"))
+        _grow_dialog_area(dialog, 1.2)  # +20% window area
+        if not dialog.exec():
+            return
+        name = dialog.textValue()
+        if not name.strip():
             return
         name = name.strip()
         if name in self._all_states:
