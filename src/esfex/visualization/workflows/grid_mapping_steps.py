@@ -1049,18 +1049,11 @@ class GridMappingBuildStep(QWidget):
         self._chk_gen_availability.setToolTip(
             "After building, write a per-generator availability CSV "
             "next to the YAML (or in ./availability/). Synthetic for "
-            "thermal / hydro / geothermal / biomass; flat 0.20-0.32 "
-            "for wind/solar unless 'use weather data' is also checked."
+            "thermal / hydro / geothermal / biomass; real weather-based "
+            "capacity factors for wind/solar (Open-Meteo; adds ~30 s per "
+            "wind/solar generator)."
         )
         avail_box.addWidget(self._chk_gen_availability)
-        self._chk_use_weather = QCheckBox("Use weather data (slow)")
-        self._chk_use_weather.setChecked(False)
-        self._chk_use_weather.setToolTip(
-            "When set, fetch real solar/wind capacity factors from the "
-            "selected source (Open-Meteo by default). Adds ~30 s per "
-            "wind/solar generator."
-        )
-        avail_box.addWidget(self._chk_use_weather)
         avail_box.addStretch()
         build_right.addLayout(avail_box)
 
@@ -1617,7 +1610,7 @@ class GridMappingBuildStep(QWidget):
             simplify_level=self._combo_simplify.currentData() or 0,
             min_component=self._spin_min_component.value(),
             gen_availability=self._chk_gen_availability.isChecked(),
-            use_weather=self._chk_use_weather.isChecked(),
+            use_weather=True,  # weather-based CF is now the default behaviour
             cfg_path=getattr(main_window, "_config_path", None),
         )
 
