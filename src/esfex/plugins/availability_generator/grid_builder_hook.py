@@ -88,9 +88,12 @@ def generate_for_grid_build(
         for their (lat, lng) — realistic, but network-bound. Queries are
         de-duplicated per ~11 km grid cell and run concurrently, so the
         cost scales with the number of *distinct* locations, not the
-        generator count. When False (default for fast builds) wind/solar
-        fall back to a flat 0.32 / 0.20 annual factor; non-weather
-        generators always use synthetic profiles.
+        generator count. If a query fails (or the backend is unavailable),
+        that wind/solar unit is left **without** an availability profile —
+        no flat or synthetic value is fabricated — and the omission is
+        reported. When False (fast builds) wind/solar use a flat
+        0.32 / 0.20 annual factor. Non-weather fuels (thermal / hydro /
+        geothermal / biomass) always use synthetic profiles.
     weather_year
         Calendar year for the weather query (only used if
         ``use_weather_data`` is True).
@@ -139,32 +142,39 @@ def generate_for_grid_build(
     )
 
     written: dict[str, Path] = {}
+    skipped: list[str] = []
     total = len(classified)
     for idx, (gid, gen, canonical, kind) in enumerate(classified):
         pct = int(100 * (idx + 1) / total)
         if progress_callback:
             progress_callback(pct, f"Profile {idx + 1}/{total}: {gid} ({kind})")
 
-        cf: Optional[np.ndarray] = None
         if use_weather_data and kind in ("solar", "wind"):
             cf = weather_cache.get(
                 _weather_cache_key(kind, gen, weather_year, weather_source))
-
-        if cf is None:
-            # Synthetic kinds, weather disabled, or a failed/absent weather
-            # fetch → the cheap local path (no I/O).
+            if cf is None:
+                # No real weather data for this location: do NOT fabricate a
+                # flat capacity factor. Leave the unit without an availability
+                # file and report it, so the gap is visible rather than faked.
+                logger.warning(
+                    "No weather data for %s (%s) — leaving it without an "
+                    "availability profile (no synthetic fallback).", gid, kind)
+                skipped.append(gid)
+                continue
+        else:
+            # Synthetic fuels (thermal/hydro/geothermal/biomass), or weather
+            # explicitly disabled → the cheap local profile (no I/O).
             try:
                 cf = _compute_cf(
                     kind, canonical, gen,
-                    use_weather_data=False,
+                    use_weather_data=use_weather_data,
                     weather_year=weather_year,
                     weather_source=weather_source,
                     seed=idx,
                 )
             except Exception as exc:
                 logger.warning(
-                    "Availability generation failed for %s (%s): %s — "
-                    "falling back to flat profile.",
+                    "Synthetic profile failed for %s (%s): %s — flat default.",
                     gid, kind, exc,
                 )
                 cf = compute_constant_cf(_default_for_kind(kind))
@@ -174,6 +184,11 @@ def generate_for_grid_build(
         gen.availability_file = str(csv_path)
         written[gid] = csv_path
 
+    if skipped:
+        shown = ", ".join(skipped[:20]) + (" …" if len(skipped) > 20 else "")
+        logger.warning(
+            "%d wind/solar generator(s) had no weather data available; left "
+            "without an availability profile: %s", len(skipped), shown)
     if progress_callback:
         progress_callback(100, f"Wrote {len(written)} availability CSV(s).")
     return written

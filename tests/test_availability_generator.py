@@ -542,7 +542,7 @@ class TestGridBuilderHookDedup:
                 assert gen.availability_file is not None
                 assert Path(written[gid]).exists()
 
-    def test_failed_fetch_falls_back_to_flat_profile(self):
+    def test_failed_fetch_skips_generator_no_fallback(self):
         from esfex.plugins.availability_generator import grid_builder_hook as gbh
 
         gens = {"w0": self._gen(35.0, 139.0)}
@@ -556,7 +556,25 @@ class TestGridBuilderHookDedup:
             written = gbh.generate_for_grid_build(
                 state, Path(tmp), use_weather_data=True)
 
-            # The unit still gets a (flat) profile, not a crashed build.
-            data = np.loadtxt(written["w0"], delimiter=",")
+            # No real weather data → no fabricated flat profile; the unit is
+            # simply left without an availability file (and the build goes on).
+            assert "w0" not in written
+            assert gens["w0"].availability_file is None
+            assert not (Path(tmp) / "w0_availability.csv").exists()
+
+    def test_synthetic_fuel_still_written_under_weather_mode(self):
+        from esfex.plugins.availability_generator import grid_builder_hook as gbh
+
+        # A thermal unit has no weather equivalent — it must still get its
+        # synthetic profile even when weather mode is on for wind/solar.
+        gens = {"t0": self._gen(35.0, 139.0, fuel="Gas", rated=100.0)}
+        state = SimpleNamespace(generators=gens)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            written = gbh.generate_for_grid_build(
+                state, Path(tmp), use_weather_data=True)
+
+            assert "t0" in written
+            assert gens["t0"].availability_file is not None
+            data = np.loadtxt(written["t0"], delimiter=",")
             assert data.shape == (8760,)
-            assert np.allclose(data, 0.32)

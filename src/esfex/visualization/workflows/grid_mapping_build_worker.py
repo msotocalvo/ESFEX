@@ -207,6 +207,14 @@ class GridBuildWorker(QThread):
                     island_lines.append(
                         f"Generated {len(written)} availability profile(s) "
                         f"under {out_dir}.")
+                # Wind/solar units with no real weather data are skipped (no
+                # fabricated flat profile); every other generator is written.
+                n_skipped = len(model.state.generators) - len(written)
+                if n_skipped > 0:
+                    island_lines.append(
+                        f"{n_skipped} wind/solar generator(s) had no weather "
+                        f"data available — left without an availability "
+                        f"profile (no synthetic fallback).")
 
         out["island_summary"] = "\n".join(island_lines)
         out["simplify_level"] = p.simplify_level
