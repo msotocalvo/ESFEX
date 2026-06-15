@@ -17,7 +17,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import QThread, Signal
 
@@ -508,8 +508,12 @@ def deduplicate_features(
     features: list[GridFeature],
     proximity_km: float = 1.0,
     capacity_tolerance: float = 0.20,
+    progress: "Callable[[str], None] | None" = None,
 ) -> list[GridFeature]:
     """Remove duplicate features across sources, merging metadata.
+
+    ``progress`` is an optional ``callback(message)`` invoked before each
+    per-category pass, so callers can surface a live status as the merge runs.
 
     Rules:
       - Generators: match by proximity + similar capacity (±tolerance).
@@ -596,22 +600,33 @@ def deduplicate_features(
                   "transformer", "line",
               )]
 
+    def _emit(items: list, msg: str) -> None:
+        # Only announce categories that actually have work, so empty stages
+        # don't flash past meaninglessly.
+        if progress is not None and items:
+            progress(msg)
+
+    _emit(generators, f"Merging {len(generators)} generators…")
     kept_gens = _proximity_dedup(
         generators, proximity_km, capacity_check=True,
     )
+    _emit(batteries, f"Merging {len(batteries)} batteries…")
     kept_bats = _proximity_dedup(
         batteries, proximity_km, capacity_check=True,
     )
     # For static infrastructure, capacity is rarely populated; rely
     # on proximity alone.
+    _emit(substations, f"Merging {len(substations)} substations…")
     kept_subs = _proximity_dedup(
         substations, proximity_km, capacity_check=False,
     )
+    _emit(transformers, f"Merging {len(transformers)} transformers…")
     kept_trs = _proximity_dedup(
         transformers, proximity_km * 0.5, capacity_check=False,
     )
 
     # --- Line dedup with cross-source enrichment ---
+    _emit(lines, f"Matching {len(lines)} transmission lines across sources…")
     osm_lines = [l for l in lines if l.source == "osm"]
     gf_lines = [l for l in lines if l.source == "gridfinder"]
     kept_lines: list[GridFeature] = list(osm_lines)
@@ -645,6 +660,7 @@ class FetchFinalizeWorker(QThread):
     ``finished`` callback.
     """
 
+    progress = Signal(str)                     # human-readable stage message
     finished = Signal(object, object, object)  # (features, counts, timings)
 
     def __init__(self, features: list, polygon: list, parent=None):
@@ -659,6 +675,8 @@ class FetchFinalizeWorker(QThread):
         feats = self._features
 
         if feats and self._polygon:
+            self.progress.emit(
+                f"Clipping {len(feats)} features to the selected region…")
             t0 = _time.perf_counter()
             before = len(feats)
             feats = filter_features_by_polygon(feats, self._polygon)
@@ -667,9 +685,11 @@ class FetchFinalizeWorker(QThread):
 
         if feats:
             t0 = _time.perf_counter()
-            feats = deduplicate_features(feats)
+            feats = deduplicate_features(
+                feats, progress=lambda msg: self.progress.emit(msg))
             timings["deduplicate"] = _time.perf_counter() - t0
 
+        self.progress.emit("Summarizing results…")
         counts: dict[str, int] = {}
         for f in feats:
             counts[f.feature_type] = counts.get(f.feature_type, 0) + 1

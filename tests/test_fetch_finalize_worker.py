@@ -63,3 +63,28 @@ def test_empty_input_is_safe(qapp):
     out = _run(FetchFinalizeWorker([], []))
     assert out["features"] == []
     assert out["counts"] == {}
+
+
+def test_progress_reports_stages_and_skips_empty(qapp):
+    feats = [_gen(35.0, 139.0, name=f"g{i}") for i in range(4)]
+    feats.append(GridFeature(source="osm", feature_type="substation",
+                             name="S", latitude=40.0, longitude=141.0))
+    msgs = []
+    w = FetchFinalizeWorker(feats, [])
+    w.progress.connect(lambda m: msgs.append(m))
+    w.run()
+    # Live, changing text per non-empty stage; no "0 batteries"/"0 lines" noise.
+    assert any("generators" in m for m in msgs)
+    assert any("substations" in m for m in msgs)
+    assert any("Summarizing" in m for m in msgs)
+    assert not any("batteries" in m for m in msgs)
+    assert not any("transmission lines" in m for m in msgs)
+
+
+def test_progress_announces_polygon_clip(qapp):
+    square = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)]
+    msgs = []
+    w = FetchFinalizeWorker([_gen(0.5, 0.5)], square)
+    w.progress.connect(lambda m: msgs.append(m))
+    w.run()
+    assert any("Clipping" in m and "region" in m for m in msgs)

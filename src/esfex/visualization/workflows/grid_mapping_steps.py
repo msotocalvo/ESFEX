@@ -554,9 +554,13 @@ class GridMappingSourceFetchStep(QWidget):
                                                       time.perf_counter())
         self._summary_label.setText("Processing results…")
         worker = FetchFinalizeWorker(self._features, self._polygon, self)
+        worker.progress.connect(self._on_finalize_progress)
         worker.finished.connect(self._on_finalize_done)
         self._finalize_worker = worker
         worker.start()
+
+    def _on_finalize_progress(self, message: str):
+        self._summary_label.setText(message)
 
     def _on_finalize_done(self, features: list, counts: dict, timings: dict):
         self._features = features
