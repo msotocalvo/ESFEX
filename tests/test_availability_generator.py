@@ -491,3 +491,72 @@ class TestTranslations:
         section = es.get("availability_generator", {})
         for key in self._REQUIRED_KEYS:
             assert key in section, f"Missing es.json key: availability_generator.{key}"
+
+
+# ===================================================================
+# TestGridBuilderHookDedup — co-located weather queries collapse + parallelize
+# ===================================================================
+
+
+class TestGridBuilderHookDedup:
+    """The Grid Builder availability hook must query the weather backend once
+    per distinct location, not once per generator (the Japan-scale bottleneck)."""
+
+    @staticmethod
+    def _gen(lat, lng, fuel="Wind", rated=10.0):
+        return SimpleNamespace(
+            latitude=lat, longitude=lng, fuel=fuel,
+            rated_power=rated, availability_file=None,
+        )
+
+    def test_colocated_generators_share_one_weather_fetch(self):
+        from esfex.plugins.availability_generator import grid_builder_hook as gbh
+
+        # Six wind units: three pairs of co-located turbines (within one cell).
+        gens = {
+            "w0": self._gen(35.00, 139.00),
+            "w1": self._gen(35.001, 139.001),  # same ~11 km cell as w0
+            "w2": self._gen(40.00, 141.00),
+            "w3": self._gen(40.002, 141.002),  # same cell as w2
+            "w4": self._gen(33.00, 130.00),
+            "w5": self._gen(33.0, 130.0),       # identical coords to w4
+        }
+        state = SimpleNamespace(generators=gens)
+
+        calls = {"n": 0}
+
+        def fake_wind(lat, lng, year, source, rated_power_mw=1.0):
+            calls["n"] += 1
+            return np.full(8760, 0.4)
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("windrex.compute_wind_hourly_cf", fake_wind, create=True):
+            written = gbh.generate_for_grid_build(
+                state, Path(tmp), use_weather_data=True)
+
+            # 6 generators, 3 distinct cells → exactly 3 backend queries.
+            assert calls["n"] == 3
+            # Every generator still gets its own CSV + availability_file.
+            assert len(written) == 6
+            for gid, gen in gens.items():
+                assert gen.availability_file is not None
+                assert Path(written[gid]).exists()
+
+    def test_failed_fetch_falls_back_to_flat_profile(self):
+        from esfex.plugins.availability_generator import grid_builder_hook as gbh
+
+        gens = {"w0": self._gen(35.0, 139.0)}
+        state = SimpleNamespace(generators=gens)
+
+        def boom(*a, **k):
+            raise RuntimeError("network down")
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("windrex.compute_wind_hourly_cf", boom, create=True):
+            written = gbh.generate_for_grid_build(
+                state, Path(tmp), use_weather_data=True)
+
+            # The unit still gets a (flat) profile, not a crashed build.
+            data = np.loadtxt(written["w0"], delimiter=",")
+            assert data.shape == (8760,)
+            assert np.allclose(data, 0.32)
