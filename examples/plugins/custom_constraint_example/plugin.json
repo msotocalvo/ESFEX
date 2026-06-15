@@ -1,0 +1,8 @@
+{
+  "name": "custom_constraint_example",
+  "version": "0.1.0",
+  "description": "Example: a Julia overlay that registers a custom constraint type.",
+  "author": "ESFEX",
+  "category": "model",
+  "priority": 0
+}

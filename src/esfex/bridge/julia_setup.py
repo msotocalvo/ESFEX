@@ -202,6 +202,29 @@ def get_julia() -> Any:
     return _julia_instance
 
 
+_included_overlays: set[str] = set()
+
+
+def include_plugin_overlays(paths) -> None:
+    """``include()`` plugin Julia overlay files into the running session (once).
+
+    Overlays run after ``ESFEX`` is loaded, so they can call
+    ``ESFEX.register_constraint_hook!(...)`` to add custom constraint types.
+    Errors in one overlay are logged and skipped (they never abort a run).
+    """
+    jl = get_julia()
+    for path in paths:
+        key = str(path).replace("\\", "/")
+        if key in _included_overlays:
+            continue
+        try:
+            jl.seval(f'include("{key}")')
+            _included_overlays.add(key)
+            logger.info("Included plugin Julia overlay: %s", key)
+        except Exception:
+            logger.exception("Failed to include plugin Julia overlay: %s", key)
+
+
 def get_esfex_module() -> Any:
     """
     Get the ESFEX Julia module.

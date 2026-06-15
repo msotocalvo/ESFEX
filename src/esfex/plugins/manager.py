@@ -714,32 +714,24 @@ class PluginManager:
     # ── Julia registration ────────────────────────────────────────────
 
     def register_julia_modules(self) -> None:
-        """Collect Julia modules from plugins and include() them.
+        """Include() plugin Julia overlay modules into the Julia session.
 
-        These are runtime overlays — they do NOT modify ESFEX source files.
+        Runtime overlays — they do NOT modify ESFEX source files. No-op (and no
+        Julia init) when no plugin ships a Julia module, so the common case stays
+        cheap; only loads Julia when there is something to include.
         """
-        for plugin in self._plugins:
-            try:
-                modules = plugin.get_julia_modules()
-                for jl_path in modules:
-                    if jl_path.is_file():
-                        logger.info(
-                            "Plugin %r: registering Julia module %s",
-                            plugin.meta.name,
-                            jl_path,
-                        )
-                        # Actual inclusion happens via the Julia bridge
-                        # when the Julia runtime is initialized
-                    else:
-                        logger.warning(
-                            "Plugin %r: Julia module not found: %s",
-                            plugin.meta.name,
-                            jl_path,
-                        )
-            except Exception:
-                logger.exception(
-                    "Plugin %r get_julia_modules() failed", plugin.meta.name
-                )
+        paths = self.get_julia_module_paths()
+        if not paths:
+            return
+        try:
+            from esfex.bridge.julia_setup import (
+                get_julia,
+                include_plugin_overlays,
+            )
+            get_julia()  # ensure the Julia runtime + ESFEX module are loaded
+            include_plugin_overlays(paths)
+        except Exception:
+            logger.exception("Failed to include plugin Julia overlays")
 
     def get_julia_module_paths(self) -> list[Path]:
         """Return all Julia module paths from loaded plugins."""
