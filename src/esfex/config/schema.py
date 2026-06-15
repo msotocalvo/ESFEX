@@ -1594,6 +1594,46 @@ class MasterProblemConfig(BaseModel):
 # =============================================================================
 
 
+class ConstraintTerm(BaseModel):
+    """One term of a linear custom constraint: coefficient × decision variable.
+
+    ``index`` entries reference the variable's axes (e.g. ``["GasCC", "all"]``
+    for ``gen_output`` = generator name + all hours). Use a generator/battery
+    name for the unit axis, an integer (1-based) for a numeric axis, or
+    ``"all"`` to sum over an axis.
+    """
+
+    variable: str
+    index: list[Any] = Field(default_factory=list)
+    coefficient: float = 1.0
+
+
+class CustomConstraintConfig(BaseModel):
+    """A user-defined optimization constraint.
+
+    ``type="linear"`` (the default) builds ``Σ coeff·var  sense  rhs`` from
+    ``terms``; other types are provided by plugin Julia overlays and read
+    ``params``. ``target`` routes the constraint to the operational
+    (dispatch/UC) or investment (master) model.
+    """
+
+    name: str
+    type: str = "linear"
+    terms: list[ConstraintTerm] = Field(default_factory=list)
+    sense: Literal["<=", ">=", "=="] = "<="
+    rhs: float = 0.0
+    target: Literal["operational", "investment"] = "operational"
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _require_terms_for_linear(self):
+        if self.type == "linear" and not self.terms:
+            raise ValueError(
+                f"linear custom constraint '{self.name}' needs at least one term"
+            )
+        return self
+
+
 class SystemConfig(BaseModel):
     """Complete configuration for a single power system."""
 
@@ -1687,6 +1727,10 @@ class SystemConfig(BaseModel):
 
     # Candidate technologies for new investment
     technologies: dict[str, TechnologyConfig] = {}
+
+    # User-defined optimization constraints (declarative; see also plugin
+    # Julia overlays for arbitrary constraint types).
+    custom_constraints: list[CustomConstraintConfig] = Field(default_factory=list)
     battery_technologies: dict[str, BatteryTechnologyConfig] = {}
 
     # Electrolyzers (stored by unit key)

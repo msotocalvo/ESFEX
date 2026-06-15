@@ -125,6 +125,93 @@ def _solver_options_to_julia(options: dict, solver_name: str = "highs") -> Any:
     return jl_dict
 
 
+# Variable axes that are referenced by NAME (generator / battery) rather than a
+# raw 1-based index. Maps variable → {axis position: ("kind", name→index map)}.
+def _name_axes(system_config):
+    gen_idx = {k: i for i, k in enumerate(system_config.generators.keys(), 1)}
+    bat_idx = {k: i for i, k in enumerate((system_config.batteries or {}).keys(), 1)}
+    return {
+        "gen_output": {0: ("generator", gen_idx)},
+        "bat_charge": {0: ("battery", bat_idx)},
+        "bat_discharge": {0: ("battery", bat_idx)},
+        "bat_soc": {0: ("battery", bat_idx)},
+    }
+
+
+def resolve_custom_constraints(system_config) -> list[dict]:
+    """Resolve declarative custom constraints to plain specs with 1-based Julia
+    integer indices (``"all"`` → -1). Pure Python (no Julia); raises ValueError
+    on an unknown generator/battery name so the user gets an early, clear error.
+    """
+    ccs = getattr(system_config, "custom_constraints", None) or []
+    if not ccs:
+        return []
+    name_axes = _name_axes(system_config)
+    out: list[dict] = []
+    for cc in ccs:
+        spec = {
+            "name": cc.name, "type": cc.type, "sense": cc.sense,
+            "rhs": float(cc.rhs), "target": cc.target,
+        }
+        if cc.type == "linear":
+            terms = []
+            for t in cc.terms:
+                axes = name_axes.get(t.variable, {})
+                resolved = []
+                for pos, entry in enumerate(t.index):
+                    if entry == "all" or entry == -1:
+                        resolved.append(-1)
+                    elif pos in axes:
+                        kind, m = axes[pos]
+                        if entry not in m:
+                            raise ValueError(
+                                f"custom constraint '{cc.name}': unknown {kind} "
+                                f"'{entry}' for variable '{t.variable}'"
+                            )
+                        resolved.append(m[entry])
+                    else:
+                        resolved.append(int(entry))
+                terms.append({
+                    "variable": t.variable, "index": resolved,
+                    "coefficient": float(t.coefficient),
+                })
+            spec["terms"] = terms
+        else:
+            spec.update(dict(cc.params or {}))
+        out.append(spec)
+    return out
+
+
+def _custom_constraints_to_julia(specs: list[dict], jl) -> Any:
+    """Build a Julia ``Vector{Any}`` of ``Dict{String,Any}`` from resolved specs
+    (mirrors the seval/setindex! pattern used for solver options). The ``target``
+    routing key is dropped — the Julia hooks don't need it."""
+    setindex = jl.seval("setindex!")
+    push = jl.seval("push!")
+    jl_vec = jl.seval("Vector{Any}()")
+    for spec in specs:
+        jl_spec = jl.seval("Dict{String, Any}()")
+        for k, v in spec.items():
+            if k == "target":
+                continue
+            if k == "terms":
+                jl_terms = jl.seval("Vector{Any}()")
+                for term in v:
+                    jl_term = jl.seval("Dict{String, Any}()")
+                    setindex(jl_term, str(term["variable"]), "variable")
+                    setindex(jl_term, float(term["coefficient"]), "coefficient")
+                    jl_idx = jl.seval("Int[]")
+                    for i in term["index"]:
+                        push(jl_idx, int(i))
+                    setindex(jl_term, jl_idx, "index")
+                    push(jl_terms, jl_term)
+                setindex(jl_spec, jl_terms, "terms")
+            else:
+                setindex(jl_spec, v, k)
+        push(jl_vec, jl_spec)
+    return jl_vec
+
+
 def _dict_to_jl_tuple_dict(py_dict: dict) -> Any:
     """Convert {(g,b): float} Python dict to Julia Dict{Tuple{Int,Int}, Float64}.
 
@@ -900,9 +987,21 @@ class PowerSystemAdapter:
         self._jl_input = self._create_input()
         t_input = _time.perf_counter() - t0
 
+        # Resolve declarative user constraints targeting the operational model.
+        op_specs = [
+            s for s in resolve_custom_constraints(self.system_config)
+            if s.get("target", "operational") == "operational"
+        ]
+
         # Create model and variables (JuMP model construction)
         t0 = _time.perf_counter()
-        self._jl_model, self._jl_vars = ESFEX.create_power_system(self._jl_input)
+        if op_specs:
+            self._jl_model, self._jl_vars = ESFEX.create_power_system(
+                self._jl_input,
+                custom_constraints=_custom_constraints_to_julia(op_specs, jl),
+            )
+        else:
+            self._jl_model, self._jl_vars = ESFEX.create_power_system(self._jl_input)
         t_build = _time.perf_counter() - t0
 
         logger.info(f"⏱ PowerSystem adapter: _create_input={t_input:.2f}s, "
