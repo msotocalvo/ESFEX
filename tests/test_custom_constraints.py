@@ -94,6 +94,40 @@ def test_no_constraints_returns_empty():
     assert resolve_custom_constraints(_sys([])) == []
 
 
+# ── Investment-target resolution (technology + year names → indices) ────────
+
+def test_resolve_investment_tech_and_year():
+    from esfex.bridge.adapters import resolve_investment_constraints
+    cc = CustomConstraintConfig(
+        name="cap_solar_invest", target="investment", sense="<=", rhs=500.0,
+        terms=[ConstraintTerm(variable="tech_investment",
+                              index=[2030, "SolarPV", "all"])],
+    )
+    tech_idx = {"SolarPV": 1, "Wind": 2}
+    year_idx = {2025: 1, 2030: 2, 2035: 3}
+    specs = resolve_investment_constraints([cc], tech_idx, year_idx)
+    assert len(specs) == 1
+    # year 2030 → 2, SolarPV → 1, "all" → -1
+    assert specs[0]["terms"][0]["index"] == [2, 1, -1]
+
+
+def test_resolvers_filter_by_target():
+    from esfex.bridge.adapters import (
+        resolve_custom_constraints,
+        resolve_investment_constraints,
+    )
+    inv = CustomConstraintConfig(
+        name="i", target="investment", sense="<=", rhs=1.0,
+        terms=[ConstraintTerm(variable="tech_investment",
+                              index=[2030, "SolarPV", "all"])],
+    )
+    # operational resolver ignores investment-target constraints (no crash on
+    # the unknown tech name, because the constraint is skipped entirely).
+    assert resolve_custom_constraints(_sys([inv])) == []
+    # …and the investment resolver ignores operational ones.
+    assert resolve_investment_constraints([_cc()], {"SolarPV": 1}, {2030: 1}) == []
+
+
 # ── Round-trip through the Pydantic model (YAML/.esfexp safe) ───────────────
 
 def test_model_dump_round_trip():

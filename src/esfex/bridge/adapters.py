@@ -125,9 +125,9 @@ def _solver_options_to_julia(options: dict, solver_name: str = "highs") -> Any:
     return jl_dict
 
 
-# Variable axes that are referenced by NAME (generator / battery) rather than a
-# raw 1-based index. Maps variable → {axis position: ("kind", name→index map)}.
-def _name_axes(system_config):
+# Custom-constraint variable axes that are referenced by NAME rather than a raw
+# 1-based index. Maps variable → {axis position: ("kind", name→index map)}.
+def _operational_axes(system_config):
     gen_idx = {k: i for i, k in enumerate(system_config.generators.keys(), 1)}
     bat_idx = {k: i for i, k in enumerate((system_config.batteries or {}).keys(), 1)}
     return {
@@ -138,48 +138,64 @@ def _name_axes(system_config):
     }
 
 
+def _investment_axes(tech_idx, year_idx):
+    # Investment vars index [year, technology, node]; year by value, tech by name.
+    yr = ("year", year_idx)
+    tech = ("technology", tech_idx)
+    return {
+        "tech_investment": {0: yr, 1: tech},
+        "bat_tech_power_investment": {0: yr, 1: tech},
+        "transfer_investment": {0: yr},
+    }
+
+
+def _resolve_one(cc, name_axes) -> dict:
+    """Resolve a single constraint into a plain spec with 1-based Julia indices
+    (``"all"`` → -1). Raises ValueError on an unknown name."""
+    spec = {"name": cc.name, "type": cc.type, "sense": cc.sense,
+            "rhs": float(cc.rhs), "target": cc.target}
+    if cc.type != "linear":
+        spec.update(dict(cc.params or {}))
+        return spec
+    terms = []
+    for t in cc.terms:
+        axes = name_axes.get(t.variable, {})
+        resolved = []
+        for pos, entry in enumerate(t.index):
+            if entry == "all" or entry == -1:
+                resolved.append(-1)
+            elif pos in axes:
+                kind, m = axes[pos]
+                if entry not in m:
+                    raise ValueError(
+                        f"custom constraint '{cc.name}': unknown {kind} "
+                        f"'{entry}' for variable '{t.variable}'"
+                    )
+                resolved.append(m[entry])
+            else:
+                resolved.append(int(entry))
+        terms.append({"variable": t.variable, "index": resolved,
+                      "coefficient": float(t.coefficient)})
+    spec["terms"] = terms
+    return spec
+
+
 def resolve_custom_constraints(system_config) -> list[dict]:
-    """Resolve declarative custom constraints to plain specs with 1-based Julia
-    integer indices (``"all"`` → -1). Pure Python (no Julia); raises ValueError
-    on an unknown generator/battery name so the user gets an early, clear error.
-    """
+    """Resolve the *operational*-target custom constraints (generator/battery
+    names → 1-based Julia indices). Pure Python; raises on unknown names."""
     ccs = getattr(system_config, "custom_constraints", None) or []
-    if not ccs:
-        return []
-    name_axes = _name_axes(system_config)
-    out: list[dict] = []
-    for cc in ccs:
-        spec = {
-            "name": cc.name, "type": cc.type, "sense": cc.sense,
-            "rhs": float(cc.rhs), "target": cc.target,
-        }
-        if cc.type == "linear":
-            terms = []
-            for t in cc.terms:
-                axes = name_axes.get(t.variable, {})
-                resolved = []
-                for pos, entry in enumerate(t.index):
-                    if entry == "all" or entry == -1:
-                        resolved.append(-1)
-                    elif pos in axes:
-                        kind, m = axes[pos]
-                        if entry not in m:
-                            raise ValueError(
-                                f"custom constraint '{cc.name}': unknown {kind} "
-                                f"'{entry}' for variable '{t.variable}'"
-                            )
-                        resolved.append(m[entry])
-                    else:
-                        resolved.append(int(entry))
-                terms.append({
-                    "variable": t.variable, "index": resolved,
-                    "coefficient": float(t.coefficient),
-                })
-            spec["terms"] = terms
-        else:
-            spec.update(dict(cc.params or {}))
-        out.append(spec)
-    return out
+    axes = _operational_axes(system_config)
+    return [_resolve_one(cc, axes) for cc in ccs
+            if getattr(cc, "target", "operational") == "operational"]
+
+
+def resolve_investment_constraints(custom_constraints, tech_idx, year_idx) -> list[dict]:
+    """Resolve the *investment*-target custom constraints (technology names →
+    1-based tech indices, year values → 1-based year indices)."""
+    ccs = custom_constraints or []
+    axes = _investment_axes(tech_idx, year_idx)
+    return [_resolve_one(cc, axes) for cc in ccs
+            if getattr(cc, "target", "operational") == "investment"]
 
 
 def _custom_constraints_to_julia(specs: list[dict], jl) -> Any:
@@ -988,10 +1004,7 @@ class PowerSystemAdapter:
         t_input = _time.perf_counter() - t0
 
         # Resolve declarative user constraints targeting the operational model.
-        op_specs = [
-            s for s in resolve_custom_constraints(self.system_config)
-            if s.get("target", "operational") == "operational"
-        ]
+        op_specs = resolve_custom_constraints(self.system_config)
 
         # Create model and variables (JuMP model construction)
         t0 = _time.perf_counter()
@@ -2520,12 +2533,31 @@ class MasterProblemAdapter:
                 f"{len(self.stochastic_scenarios)} scenarios"
             )
         else:
-            self._jl_model, self._jl_vars, self._jl_targets = (
-                ESFEX.create_master_problem(
-                    self._jl_input,
-                    use_representative_days=use_representative_days,
-                )
+            # Resolve declarative user constraints targeting the investment model
+            # (technology names → 1-based tech indices, year values → year indices).
+            jl = get_julia()
+            tech_idx = {k: i for i, k in
+                        enumerate(self.system_config.technologies.keys(), 1)}
+            year_idx = {y: i for i, y in enumerate(self.years, 1)}
+            inv_specs = resolve_investment_constraints(
+                getattr(self.system_config, "custom_constraints", None),
+                tech_idx, year_idx,
             )
+            if inv_specs:
+                self._jl_model, self._jl_vars, self._jl_targets = (
+                    ESFEX.create_master_problem(
+                        self._jl_input,
+                        use_representative_days=use_representative_days,
+                        custom_constraints=_custom_constraints_to_julia(inv_specs, jl),
+                    )
+                )
+            else:
+                self._jl_model, self._jl_vars, self._jl_targets = (
+                    ESFEX.create_master_problem(
+                        self._jl_input,
+                        use_representative_days=use_representative_days,
+                    )
+                )
 
         logger.debug("MasterProblem model built successfully")
 
